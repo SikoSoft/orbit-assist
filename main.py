@@ -10,10 +10,6 @@ client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 app = FastAPI(title="AI API", version="0.1.0")
 
-@app.get("/")
-async def root() -> dict[str, str]:
-    return {"message": "Hello from FastAPI"}
-
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
