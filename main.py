@@ -55,7 +55,7 @@ async def get_db() -> AsyncGenerator[psycopg.AsyncConnection, None]:
     async with pool.connection() as conn:
         yield conn
 
-app = FastAPI(title="AI API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Orbit-Assist API", version="0.1.0", lifespan=lifespan)
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 class PromptRequest(BaseModel):
