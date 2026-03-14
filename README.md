@@ -15,7 +15,7 @@ pip install -e .
 Start the development server:
 
 ```bash
-uvicorn main:app --reload
+uv run uvicorn main:app --reload --env-file .env
 ```
 
 Open:
@@ -23,3 +23,11 @@ Open:
 - http://127.0.0.1:8000/
 - http://127.0.0.1:8000/health
 - http://127.0.0.1:8000/docs
+
+## Handy commands
+
+### Kill ongoing process
+
+```bash
+pkill -f "uvicorn main:app" || true
+```
