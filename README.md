@@ -15,7 +15,7 @@ pip install -e .
 Start the development server:
 
 ```bash
-uv run uvicorn main:app --reload --env-file .env
+uv run dev
 ```
 
 Open:

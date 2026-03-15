@@ -1,13 +1,15 @@
 import os
+import uvicorn
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from google import genai
 import psycopg
 from psycopg_pool import AsyncConnectionPool
+import httpx
 
 def build_db_connection_config(db_uri: str) -> tuple[str, dict[str, str]]:
     parts = urlsplit(db_uri)
@@ -44,12 +46,16 @@ DB_CONNINFO, DB_KWARGS = build_db_connection_config(DB_URI)
 
 pool = AsyncConnectionPool(conninfo=DB_CONNINFO, kwargs=DB_KWARGS, open=False)
 
+http_client: httpx.AsyncClient = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global http_client
     await pool.open()
+    http_client = httpx.AsyncClient(base_url=os.environ.get("BASE_API_URL"), headers={"authorization": "test"})
     yield
+    await http_client.aclose()
     await pool.close()
-
 
 async def get_db() -> AsyncGenerator[psycopg.AsyncConnection, None]:
     async with pool.connection() as conn:
@@ -61,16 +67,20 @@ client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 class PromptRequest(BaseModel):
     user_input: str
 
-@app.get("/health")
-async def health(db: psycopg.AsyncConnection = Depends(get_db)) -> dict[str, str]:
-    await db.execute("SELECT 1")
-    return {"status": "ok", "db": "connected"}
+class HealthResponse(BaseModel):
+    status: str
+
+@app.get("/health", response_model=HealthResponse)
+async def health(db: psycopg.AsyncConnection = Depends(get_db)) -> HealthResponse:
+    """Health check endpoint to verify API and database connectivity."""
+    return HealthResponse(status="ok")
 
 @app.post("/prompt")
 async def prompt(
     request: PromptRequest, 
     db: psycopg.AsyncConnection = Depends(get_db)
 ) -> dict[str, str]:
+    """Handles user prompts, generates AI responses, and logs interactions."""
     try:
         response = await client.aio.models.generate_content(
             model="models/gemini-3.1-flash-lite-preview",
@@ -88,9 +98,21 @@ async def prompt(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/history")
-async def get_history(db: psycopg.AsyncConnection = Depends(get_db)):
-    """A dummy route to show how to fetch data"""
-    cur = await db.execute("SELECT prompt, response FROM logs ORDER BY id DESC LIMIT 10")
-    rows = await cur.fetchall()
-    return [{"prompt": r[0], "response": r[1]} for r in rows]
+@app.get("/entities")
+async def get_entities(db: psycopg.AsyncConnection = Depends(get_db), authorization: str = Header(default="")):
+    """Fetches the most recent 10 entities"""
+    http_client.headers["authorization"] = authorization
+    response = await http_client.get("/entities")
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch entities")
+    return response.json()
+
+
+    #cur = await db.execute("""SELECT * FROM public."Entity" ORDER BY "createdAt" DESC LIMIT 10""")
+    #rows = await cur.fetchall()
+    #return [{"prompt": r[0], "response": r[1]} for r in rows]
+
+
+def run_dev():
+    """Function to be called by 'uv run dev'"""
+    uvicorn.run("main:app", reload=True, env_file=".env")
