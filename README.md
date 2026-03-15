@@ -30,4 +30,5 @@ Open:
 
 ```bash
 pkill -f "uvicorn main:app" || true
+kill $(lsof -tiTCP:8000 -sTCP:LISTEN)
 ```
