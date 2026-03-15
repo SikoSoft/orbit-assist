@@ -5,11 +5,17 @@ from typing import AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from google import genai
 import psycopg
 from psycopg_pool import AsyncConnectionPool
 import httpx
+
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def build_db_connection_config(db_uri: str) -> tuple[str, dict[str, str]]:
     parts = urlsplit(db_uri)
@@ -48,11 +54,14 @@ pool = AsyncConnectionPool(conninfo=DB_CONNINFO, kwargs=DB_KWARGS, open=False)
 
 http_client: httpx.AsyncClient = None
 
+api_key_scheme = APIKeyHeader(name="Authorization", auto_error=False)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global http_client
     await pool.open()
     http_client = httpx.AsyncClient(base_url=os.environ.get("BASE_API_URL"), headers={"authorization": "test"})
+    logger.info("HTTP client initialized")
     yield
     await http_client.aclose()
     await pool.close()
@@ -99,11 +108,14 @@ async def prompt(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/entities")
-async def get_entities(db: psycopg.AsyncConnection = Depends(get_db), authorization: str = Header(default="")):
+async def get_entities(db: psycopg.AsyncConnection = Depends(get_db),  token: str = Depends(api_key_scheme)):
     """Fetches the most recent 10 entities"""
-    http_client.headers["authorization"] = authorization
-    response = await http_client.get("/entities")
+    logger.info("Fetching entities with authorization: %s", token)
+    http_client.headers["authorization"] = token
+    response = await http_client.get("/entity")
     if response.status_code != 200:
+        logger.info("Failed to fetch entities: %s", response.text)
+        logger.error("Failed to fetch entities: %s", response.text)
         raise HTTPException(status_code=response.status_code, detail="Failed to fetch entities")
     return response.json()
 
