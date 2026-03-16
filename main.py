@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 import psycopg
 from psycopg_pool import AsyncConnectionPool
@@ -16,6 +16,19 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class Employer(BaseModel):
+    name: str
+
+class JobAd(BaseModel):
+    id: str
+    headline: str
+    employer: Employer
+    application_deadline: str
+
+    class Config:
+        extra = "ignore"
 
 def build_db_connection_config(db_uri: str) -> tuple[str, dict[str, str]]:
     parts = urlsplit(db_uri)
@@ -52,18 +65,21 @@ DB_CONNINFO, DB_KWARGS = build_db_connection_config(DB_URI)
 
 pool = AsyncConnectionPool(conninfo=DB_CONNINFO, kwargs=DB_KWARGS, open=False)
 
-http_client: httpx.AsyncClient = None
+orbit_client: httpx.AsyncClient = None
+jobs_client: httpx.AsyncClient = None
 
 api_key_scheme = APIKeyHeader(name="Authorization", auto_error=False)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global http_client
+    global orbit_client, jobs_client
     await pool.open()
-    http_client = httpx.AsyncClient(base_url=os.environ.get("BASE_API_URL"), headers={"authorization": "test"})
+    orbit_client = httpx.AsyncClient(base_url=os.environ.get("BASE_API_URL"))
+    jobs_client = httpx.AsyncClient(base_url=os.environ.get("JOBS_API_URL"))
     logger.info("HTTP client initialized")
     yield
-    await http_client.aclose()
+    await orbit_client.aclose()
+    await jobs_client.aclose()
     await pool.close()
 
 async def get_db() -> AsyncGenerator[psycopg.AsyncConnection, None]:
@@ -83,6 +99,31 @@ class HealthResponse(BaseModel):
 async def health(db: psycopg.AsyncConnection = Depends(get_db)) -> HealthResponse:
     """Health check endpoint to verify API and database connectivity."""
     return HealthResponse(status="ok")
+
+@app.get("/jobs")
+async def get_jobs():
+    """Fetches the most recent 10 jobs"""
+    query_params = {
+        "limit": "100",
+        "occupation-field": "apaJ_2ja_LuF",
+        "municipality": "oYPt_yRA_Smm",
+    }
+    response = await jobs_client.get("/search", params=query_params)
+    response.raise_for_status()
+        
+    raw_data = response.json()
+
+    clean_jobs = [
+        {
+            "id": job.id,
+            "headline": job.headline,
+            "employer": job.employer.name,  # Extract the name here
+            "deadline": job.application_deadline
+        }
+        for job in [JobAd(**ad) for ad in raw_data.get("hits", [])]
+    ]
+        
+    return {"results": clean_jobs}
 
 @app.post("/prompt")
 async def prompt(
@@ -111,8 +152,8 @@ async def prompt(
 async def get_entities(db: psycopg.AsyncConnection = Depends(get_db),  token: str = Depends(api_key_scheme)):
     """Fetches the most recent 10 entities"""
     logger.info("Fetching entities with authorization: %s", token)
-    http_client.headers["authorization"] = token
-    response = await http_client.get("/entity")
+    orbit_client.headers["authorization"] = token
+    response = await orbit_client.get("/entity")
     if response.status_code != 200:
         logger.info("Failed to fetch entities: %s", response.text)
         logger.error("Failed to fetch entities: %s", response.text)
