@@ -21,4 +21,5 @@ dev = "dev:run"
 package = true
 
 [tool.setuptools]
-py-modules = ["main", "dev"]
+py-modules = ["dev"]
+packages = ["src"]

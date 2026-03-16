@@ -29,6 +29,6 @@ Open:
 ### Kill ongoing process
 
 ```bash
-pkill -f "uvicorn main:app" || true
+pkill -f "uvicorn src.main:app" || true
 kill $(lsof -tiTCP:8000 -sTCP:LISTEN)
 ```
