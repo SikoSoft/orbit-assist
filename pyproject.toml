@@ -8,18 +8,22 @@ dependencies = [
 	"fastapi>=0.115.0",
 	"google-genai>=1.67.0",
 	"httpx>=0.28.1",
+	"pydantic-settings>=2.11.0",
 	"psycopg[binary]>=3.2.10",
 	"psycopg-pool>=3.2.7",
 	"uvicorn[standard]>=0.30.0",
 ]
 
 [project.scripts]
-dev = "dev:run"
+dev = "orbit_assist.dev:run"
 
 
 [tool.uv]
 package = true
 
 [tool.setuptools]
-py-modules = ["dev"]
-packages = ["src"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["orbit_assist*"]
