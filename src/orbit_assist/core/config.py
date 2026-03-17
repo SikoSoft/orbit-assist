@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     jobs_limit: int = 20
     jobs_occupation_field: str = "apaJ_2ja_LuF"
+    jobs_occupation_group: str = "DJh5_yyF_hEM"
     jobs_municipality: str = "oYPt_yRA_Smm"
 
 

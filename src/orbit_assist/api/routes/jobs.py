@@ -12,7 +12,8 @@ async def get_jobs(request: Request) -> JobsResponse:
     settings = get_settings()
     query_params = {
         "limit": str(settings.jobs_limit),
-        "occupation-field": settings.jobs_occupation_field,
+        # "occupation-field": settings.jobs_occupation_field,
+        "occupation-group": settings.jobs_occupation_group,
         "municipality": settings.jobs_municipality,
     }
 
