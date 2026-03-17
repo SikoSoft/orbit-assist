@@ -5,6 +5,10 @@ class Employer(BaseModel):
     name: str
 
 
+class Description(BaseModel):
+    text: str | None = None
+
+
 class JobAd(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -12,6 +16,7 @@ class JobAd(BaseModel):
     headline: str
     employer: Employer
     application_deadline: str
+    description: Description | None = None
 
 
 class JobSummary(BaseModel):
@@ -19,7 +24,9 @@ class JobSummary(BaseModel):
     headline: str
     employer: str
     deadline: str
+    description: str
 
 
 class JobsResponse(BaseModel):
     results: list[JobSummary]
+    cloud_stats: dict[str, int]

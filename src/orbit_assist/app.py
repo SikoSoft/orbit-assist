@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 
@@ -9,11 +10,14 @@ from orbit_assist.core.config import get_settings
 from orbit_assist.core.logging import setup_logging
 from orbit_assist.db.pool import create_pool
 
+logger = logging.getLogger(__name__)
+
 
 def create_app() -> FastAPI:
     setup_logging()
     settings = get_settings()
     db_pool = create_pool(settings.database_url)
+    logger.info("Creating application with settings: %s", settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
