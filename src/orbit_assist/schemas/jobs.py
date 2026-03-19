@@ -28,5 +28,5 @@ class JobSummary(BaseModel):
 
 
 class JobsResponse(BaseModel):
-    results: list[JobSummary]
+    # results: list[JobSummary]
     cloud_stats: dict[str, int]

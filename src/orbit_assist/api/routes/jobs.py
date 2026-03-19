@@ -29,15 +29,15 @@ async def get_jobs(request: Request) -> JobsResponse:
     )
 
     return JobsResponse(
-        results=[
-            JobSummary(
-                id=job.id,
-                headline=job.headline,
-                employer=job.employer.name,
-                deadline=job.application_deadline,
-                description=job.description.text if job.description and job.description.text else "",
-            )
-            for job in job_ads
-        ],
+        # results=[
+        #     JobSummary(
+        #         id=job.id,
+        #         headline=job.headline,
+        #         employer=job.employer.name,
+        #         deadline=job.application_deadline,
+        #         description=job.description.text if job.description and job.description.text else "",
+        #     )
+        #     for job in job_ads
+        # ],
         cloud_stats=tally,
     )

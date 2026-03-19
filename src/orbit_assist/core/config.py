@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     base_api_url: str
     jobs_api_url: str
 
-    jobs_limit: int = 20
+    jobs_limit: int = 50
     jobs_occupation_field: str = "apaJ_2ja_LuF"
     jobs_occupation_group: str = "DJh5_yyF_hEM"
     jobs_municipality: str = "oYPt_yRA_Smm"
