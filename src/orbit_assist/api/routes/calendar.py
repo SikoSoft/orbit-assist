@@ -26,8 +26,6 @@ def get_calendar_service(token_path: str, credentials_path: str):
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(GoogleAuthRequest())
         else:
-            # Note: This will open a browser on the SERVER machine. 
-            # In production, you'd use a different OAuth flow.
             flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
             creds = flow.run_local_server(port=0)
         with open(token_path, 'w') as token:
@@ -44,9 +42,7 @@ def get_calendar() -> CalendarResponse:
             credentials_path=settings.google_credentials_path,
         )
 
-        # Calculate "Next Week" range
         now = datetime.datetime.now(datetime.timezone.utc)
-        # Find next Monday (0 is Monday, 6 is Sunday)
         days_until_monday = (7 - now.weekday()) % 7
         if days_until_monday == 0: days_until_monday = 7 # If today is Monday, get NEXT Monday
         
@@ -63,7 +59,6 @@ def get_calendar() -> CalendarResponse:
         
         events = events_result.get('items', [])
         
-        # Format the output for the API response
         return CalendarResponse(
             events=[
                 CalendarEvent(
