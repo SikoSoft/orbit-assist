@@ -39,5 +39,5 @@ async def get_jobs(request: Request) -> JobsResponse:
         #     )
         #     for job in job_ads
         # ],
-        cloud_stats=tally,
+        analysis=tally,
     )

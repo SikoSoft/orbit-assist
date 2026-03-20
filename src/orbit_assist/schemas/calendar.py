@@ -9,7 +9,7 @@ class Description(BaseModel):
     text: str | None = None
 
 
-class JobAd(BaseModel):
+class CalendarEvent(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str
@@ -19,7 +19,7 @@ class JobAd(BaseModel):
     description: Description | None = None
 
 
-class JobSummary(BaseModel):
+class CalendarEventSummary(BaseModel):
     id: str
     headline: str
     employer: str
@@ -27,6 +27,6 @@ class JobSummary(BaseModel):
     description: str
 
 
-class JobsResponse(BaseModel):
-    # results: list[JobSummary]
+class CalendarResponse(BaseModel):
+    # results: list[CalendarEventSummary]
     analysis: dict[str, int]
