@@ -1,32 +1,12 @@
-from pydantic import BaseModel, ConfigDict
-
-
-class Employer(BaseModel):
-    name: str
-
-
-class Description(BaseModel):
-    text: str | None = None
+from pydantic import BaseModel
 
 
 class CalendarEvent(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    id: str
-    headline: str
-    employer: Employer
-    application_deadline: str
-    description: Description | None = None
-
-
-class CalendarEventSummary(BaseModel):
-    id: str
-    headline: str
-    employer: str
-    deadline: str
-    description: str
+    summary: str | None = None
+    start: str
+    end: str
+    link: str | None = None
 
 
 class CalendarResponse(BaseModel):
-    # results: list[CalendarEventSummary]
-    analysis: dict[str, int]
+    events: list[CalendarEvent]

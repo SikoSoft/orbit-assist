@@ -3,6 +3,8 @@ import datetime
 
 from fastapi import APIRouter, HTTPException
 
+from orbit_assist.core.config import get_settings
+from orbit_assist.schemas.calendar import CalendarEvent, CalendarResponse
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -13,11 +15,12 @@ router = APIRouter(tags=["calendar"])
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
-def get_calendar_service():
+
+def get_calendar_service(token_path: str, credentials_path: str):
     """Helper to authenticate and return the Google Calendar service."""
     creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -25,17 +28,21 @@ def get_calendar_service():
         else:
             # Note: This will open a browser on the SERVER machine. 
             # In production, you'd use a different OAuth flow.
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
+        with open(token_path, 'w') as token:
             token.write(creds.to_json())
 
     return build('calendar', 'v3', credentials=creds)
 
-@router.get("/calendar")
-def get_calendar():
+@router.get("/calendar", response_model=CalendarResponse)
+def get_calendar() -> CalendarResponse:
     try:
-        service = get_calendar_service()
+        settings = get_settings()
+        service = get_calendar_service(
+            token_path=settings.google_token_path,
+            credentials_path=settings.google_credentials_path,
+        )
 
         # Calculate "Next Week" range
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -57,15 +64,17 @@ def get_calendar():
         events = events_result.get('items', [])
         
         # Format the output for the API response
-        return [
-            {
-                "summary": event.get("summary"),
-                "start": event['start'].get('dateTime', event['start'].get('date')),
-                "end": event['end'].get('dateTime', event['end'].get('date')),
-                "link": event.get("htmlLink")
-            }
-            for event in events
-        ]
+        return CalendarResponse(
+            events=[
+                CalendarEvent(
+                    summary=event.get("summary"),
+                    start=event["start"].get("dateTime", event["start"].get("date")),
+                    end=event["end"].get("dateTime", event["end"].get("date")),
+                    link=event.get("htmlLink"),
+                )
+                for event in events
+            ]
+        )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     jobs_occupation_group: str = "DJh5_yyF_hEM"
     jobs_municipality: str = "oYPt_yRA_Smm"
 
+    google_credentials_path: str = "credentials.json"
+    google_token_path: str = "token.json"
+
 
 @lru_cache
 def get_settings() -> Settings:
