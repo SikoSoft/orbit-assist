@@ -10,3 +10,18 @@ class CalendarEvent(BaseModel):
 
 class CalendarResponse(BaseModel):
     events: list[CalendarEvent]
+
+
+class CreateCalendarEventRequest(BaseModel):
+    summary: str
+    start: str
+    end: str
+    description: str | None = None
+
+
+class CreateCalendarEventResponse(BaseModel):
+    id: str
+    summary: str
+    start: str
+    end: str
+    link: str | None = None
