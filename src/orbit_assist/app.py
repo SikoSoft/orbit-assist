@@ -2,6 +2,9 @@ from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.requests import Request
 
 from orbit_assist.api.router import router as api_router
 from orbit_assist.clients.genai import create_genai_client
@@ -11,6 +14,16 @@ from orbit_assist.core.logging import setup_logging
 from orbit_assist.db.pool import create_pool
 
 logger = logging.getLogger(__name__)
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(
+        "Request validation failed for %s %s: %s",
+        request.method,
+        request.url.path,
+        exc.errors(),
+    )
+    return await request_validation_exception_handler(request, exc)
 
 
 def create_app() -> FastAPI:
@@ -33,6 +46,7 @@ def create_app() -> FastAPI:
         await db_pool.close()
 
     app = FastAPI(title=settings.app_title, version=settings.app_version, lifespan=lifespan)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.include_router(api_router)
     return app
 
