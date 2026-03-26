@@ -27,15 +27,30 @@ _DATA_TYPE_MAP = {
     "bool": "BOOLEAN",
 }
 
+def _get_property_config_id(entity_config: EntityConfig, prop_name: str) -> int:
+    for prop in entity_config.properties:
+        if prop.name.lower() == prop_name.lower():
+            return prop.id
+    raise ValueError(f"Property '{prop_name}' not found in entity config '{entity_config.name}'")
+
 def _build_function_declarations(configs: list[EntityConfig]) -> list[types.FunctionDeclaration]:
     declarations = []
     for config in configs:
         visible_props = [p for p in config.properties if not p.hidden]
         properties = {
-            prop.name: types.Schema(type=_DATA_TYPE_MAP.get(prop.dataType.lower(), "STRING"))
-            for prop in visible_props
+            "entityConfigId": types.Schema(
+                type="INTEGER",
+                description=f"The entity config ID. Always use {config.id}.",
+            ),
+            **{
+                prop.name: types.Schema(
+                    type=_DATA_TYPE_MAP.get(prop.dataType.lower(), "STRING"),
+                    description=prop.name,
+                )
+                for prop in visible_props
+            },
         }
-        required = [prop.name for prop in visible_props if prop.required]
+        required = ["entityConfigId"] + [prop.name for prop in visible_props if prop.required]
         declarations.append(types.FunctionDeclaration(
             name=f"handle_{config.name.lower().replace(' ', '_').replace('-', '_')}",
             description=config.description or f"Called when a {config.name} is identified in the image",
@@ -57,10 +72,10 @@ def _build_prompt(configs: list[EntityConfig]) -> str:
     for config in configs:
         visible_props = [p for p in config.properties if not p.hidden]
         prop_list = ", ".join(
-            f"{p.name} ({'required' if p.required else 'optional'})"
+            f"{p.name} (id: {p.id}, {'required' if p.required else 'optional'})"
             for p in visible_props
         )
-        lines.append(f"  - {config.name}: {config.description}. Properties: {prop_list}")
+        lines.append(f"  - {config.name} (id: {config.id}): {config.description}. Properties: {prop_list}")
     return "\n".join(lines)
 
 
@@ -108,7 +123,18 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
 
             for part in genai_response.candidates[0].content.parts:
                 if part.function_call:
-                    logger.info("Gemini identified entity — handler: %s, args: %s", part.function_call.name, dict(part.function_call.args))
+                    entity_config_id = int(part.function_call.args.get("entityConfigId"))
+                    matching_config = next((c for c in configs.entityConfigs if c.id == entity_config_id), None)
+                    property_config_ids = {
+                        prop_name: _get_property_config_id(matching_config, prop_name)
+                        for prop_name in part.function_call.args
+                        if prop_name != "entityConfigId"
+                    }
+                    payload = [
+                        {"propertyConfigId": prop_config_id, "value": part.function_call.args[prop_name]}
+                        for prop_name, prop_config_id in property_config_ids.items()
+                    ]
+                    logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
 
         except Exception:
             logger.exception("Gemini processing failed")
