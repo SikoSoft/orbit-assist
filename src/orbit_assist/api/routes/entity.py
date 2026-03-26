@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from google.genai import types
+from orbit_assist.schemas.entity import EntityConfigResponse
 
 from orbit_assist.api.deps import get_authorization_header
 from orbit_assist.schemas.prompt import PromptResponse
@@ -28,6 +29,22 @@ tools = [handle_record, handle_food]
 @router.post("/assist/entity", response_model=ImageUploadResponse)
 async def upload_image(request: Request,token: str = Depends(get_authorization_header), file: UploadFile = File(...)) -> ImageUploadResponse:
     try:
+        response = await request.app.state.orbit_client.get(
+            "/entityConfig",
+            headers={"authorization": token},
+        )
+        # logger.info("Fetched entity config: %s", response.text)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch entity config")
+
+        configs = EntityConfigResponse.model_validate(response.json())
+
+        logger.info(f"Received entity config: {configs}")
+
+        for config in configs.entityConfigs:
+            logger.info(f"Processing entity config: {config.name} with properties: {[prop.name for prop in config.properties]}")
+
         allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
         if file.content_type not in allowed_types:
             raise HTTPException(
@@ -45,10 +62,12 @@ async def upload_image(request: Request,token: str = Depends(get_authorization_h
         
         logger.info(f"Uploaded image: {file.filename}, size: {len(image_contents)}, token: {token}")
         
+
+        """
         try:
             response = await request.app.state.genai_client.aio.models.generate_content(
                 model="models/gemini-3.1-flash-lite-preview",
-                contents=[types.Part.from_bytes(data=image_contents, mime_type="image/jpeg"), f"Analyze the uploaded image and identify any entities. If a record is detected, provide the album name and artist. If a food item is detected, provide the name and portion size. Use the following tools to handle the identified entities: {tools}"],
+                contents=[types.Part.from_bytes(data=image_contents, mime_type=file.content_type), f"Analyze the uploaded image and identify any entities. If a record is detected, provide the album name and artist. If a food item is detected, provide the name and portion size. Use the following tools to handle the identified entities: {tools}"],
                 config=types.GenerateContentConfig(tools=tools)
             )
 
@@ -60,10 +79,10 @@ async def upload_image(request: Request,token: str = Depends(get_authorization_h
                         funcs = {f.__name__: f for f in tools}
                         funcs[fn_name](**args)
 
-
         except Exception:
             logger.exception("Prompt handling failed")
             raise HTTPException(status_code=500, detail="Failed to process prompt")
+        """
         
         return ImageUploadResponse(
             filename=file.filename,
