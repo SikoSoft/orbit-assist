@@ -2,10 +2,9 @@ import logging
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from google.genai import types
-from orbit_assist.schemas.entity import EntityConfigResponse
+from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse
 
 from orbit_assist.api.deps import get_authorization_header
-from orbit_assist.schemas.prompt import PromptResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["images"])
@@ -16,34 +15,68 @@ class ImageUploadResponse(BaseModel):
     size: int
     content_type: str
 
-def handle_record(album_name: str, artist: str):
-    """Triggered when a record is detected."""
-    print(f"Executing record logic for: {album_name}. {artist}")
 
-def handle_food(name: str, portion_size: str):
-    """Triggered when a food item is detected."""
-    print(f"Executing food logic for: {name} in {portion_size} portion")
+_DATA_TYPE_MAP = {
+    "text": "STRING",
+    "string": "STRING",
+    "number": "NUMBER",
+    "float": "NUMBER",
+    "integer": "INTEGER",
+    "int": "INTEGER",
+    "boolean": "BOOLEAN",
+    "bool": "BOOLEAN",
+}
 
-tools = [handle_record, handle_food]
+def _build_function_declarations(configs: list[EntityConfig]) -> list[types.FunctionDeclaration]:
+    declarations = []
+    for config in configs:
+        visible_props = [p for p in config.properties if not p.hidden]
+        properties = {
+            prop.name: types.Schema(type=_DATA_TYPE_MAP.get(prop.dataType.lower(), "STRING"))
+            for prop in visible_props
+        }
+        required = [prop.name for prop in visible_props if prop.required]
+        declarations.append(types.FunctionDeclaration(
+            name=f"handle_{config.name.lower().replace(' ', '_').replace('-', '_')}",
+            description=config.description or f"Called when a {config.name} is identified in the image",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties=properties,
+                required=required or None,
+            ),
+        ))
+    return declarations
+
+def _build_prompt(configs: list[EntityConfig]) -> str:
+    lines = [
+        "Analyze the uploaded image and identify any entities present.",
+        "Call the single handler function that best matches what you see.",
+        "",
+        "Available entity types:",
+    ]
+    for config in configs:
+        visible_props = [p for p in config.properties if not p.hidden]
+        prop_list = ", ".join(
+            f"{p.name} ({'required' if p.required else 'optional'})"
+            for p in visible_props
+        )
+        lines.append(f"  - {config.name}: {config.description}. Properties: {prop_list}")
+    return "\n".join(lines)
+
 
 @router.post("/assist/entity", response_model=ImageUploadResponse)
-async def upload_image(request: Request,token: str = Depends(get_authorization_header), file: UploadFile = File(...)) -> ImageUploadResponse:
+async def upload_image(request: Request, token: str = Depends(get_authorization_header), file: UploadFile = File(...)) -> ImageUploadResponse:
     try:
-        response = await request.app.state.orbit_client.get(
+        config_response = await request.app.state.orbit_client.get(
             "/entityConfig",
             headers={"authorization": token},
         )
-        # logger.info("Fetched entity config: %s", response.text)
 
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Failed to fetch entity config")
+        if config_response.status_code != 200:
+            raise HTTPException(status_code=config_response.status_code, detail="Failed to fetch entity config")
 
-        configs = EntityConfigResponse.model_validate(response.json())
-
-        logger.info(f"Received entity config: {configs}")
-
-        for config in configs.entityConfigs:
-            logger.info(f"Processing entity config: {config.name} with properties: {[prop.name for prop in config.properties]}")
+        configs = EntityConfigResponse.model_validate(config_response.json())
+        logger.info("Fetched %d entity configs: %s", len(configs.entityConfigs), [c.name for c in configs.entityConfigs])
 
         allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
         if file.content_type not in allowed_types:
@@ -51,7 +84,7 @@ async def upload_image(request: Request,token: str = Depends(get_authorization_h
                 status_code=400,
                 detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
             )
-        
+
         max_size = 5 * 1024 * 1024
         image_contents = await file.read()
         if len(image_contents) > max_size:
@@ -59,39 +92,36 @@ async def upload_image(request: Request,token: str = Depends(get_authorization_h
                 status_code=413,
                 detail=f"File too large. Max size: {max_size / 1024 / 1024}MB"
             )
-        
-        logger.info(f"Uploaded image: {file.filename}, size: {len(image_contents)}, token: {token}")
-        
 
-        """
+        declarations = _build_function_declarations(configs.entityConfigs)
+        prompt = _build_prompt(configs.entityConfigs)
+
         try:
-            response = await request.app.state.genai_client.aio.models.generate_content(
+            genai_response = await request.app.state.genai_client.aio.models.generate_content(
                 model="models/gemini-3.1-flash-lite-preview",
-                contents=[types.Part.from_bytes(data=image_contents, mime_type=file.content_type), f"Analyze the uploaded image and identify any entities. If a record is detected, provide the album name and artist. If a food item is detected, provide the name and portion size. Use the following tools to handle the identified entities: {tools}"],
-                config=types.GenerateContentConfig(tools=tools)
+                contents=[
+                    types.Part.from_bytes(data=image_contents, mime_type=file.content_type),
+                    prompt,
+                ],
+                config=types.GenerateContentConfig(tools=[types.Tool(function_declarations=declarations)])
             )
 
-            for call in response.candidates[0].content.parts:
-                    if call.function_call:
-                        fn_name = call.function_call.name
-                        args = call.function_call.args
-                        
-                        funcs = {f.__name__: f for f in tools}
-                        funcs[fn_name](**args)
+            for part in genai_response.candidates[0].content.parts:
+                if part.function_call:
+                    logger.info("Gemini identified entity — handler: %s, args: %s", part.function_call.name, dict(part.function_call.args))
 
         except Exception:
-            logger.exception("Prompt handling failed")
-            raise HTTPException(status_code=500, detail="Failed to process prompt")
-        """
-        
+            logger.exception("Gemini processing failed")
+            raise HTTPException(status_code=500, detail="Failed to process image with Gemini")
+
         return ImageUploadResponse(
             filename=file.filename,
             size=len(image_contents),
             content_type=file.content_type,
         )
-    
+
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Image upload failed")
         raise HTTPException(status_code=500, detail="Failed to process image")
