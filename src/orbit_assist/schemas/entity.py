@@ -23,3 +23,17 @@ class EntityConfig(BaseModel):
 
 class EntityConfigResponse(BaseModel):
     entityConfigs: list[EntityConfig]
+
+class CreateEntityProperty(BaseModel):
+    id: int
+    propertyConfigId: int
+    value: str | int | float | bool
+    order: int
+
+
+class CreateEntityRequest(BaseModel):
+    entityConfigId: int
+    properties: list[CreateEntityProperty]
+    propertyReferences: list[dict[str, str | int | float | bool]] | None = None
+    tags: list[str] | None = None
+    timeZone: int | None = None

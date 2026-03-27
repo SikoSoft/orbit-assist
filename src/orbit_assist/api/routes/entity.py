@@ -136,6 +136,20 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
                     ]
                     logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
 
+            entity_payload = {
+                "entityConfigId": entity_config_id,
+                "properties": payload,
+                "tags": [],
+            }
+            create_response = await request.app.state.orbit_client.post(
+                "/entity",
+                json=entity_payload,
+                headers={"authorization": token},
+            )
+
+            logger.info("Create entity response: %d %s", create_response.status_code, create_response.text)
+
+
         except Exception:
             logger.exception("Gemini processing failed")
             raise HTTPException(status_code=500, detail="Failed to process image with Gemini")
