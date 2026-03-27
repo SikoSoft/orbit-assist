@@ -24,10 +24,14 @@ class EntityConfig(BaseModel):
 class EntityConfigResponse(BaseModel):
     entityConfigs: list[EntityConfig]
 
+class PropertyImageValue(BaseModel):
+    src: str
+    alt: str
+
 class CreateEntityProperty(BaseModel):
     id: int
     propertyConfigId: int
-    value: str | int | float | bool
+    value: str | int | float | bool | PropertyImageValue
     order: int
 
 

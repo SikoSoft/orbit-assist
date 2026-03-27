@@ -130,17 +130,29 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
                         for prop_name in part.function_call.args
                         if prop_name != "entityConfigId"
                     }
-                    payload = [
+                    properties_payload = [
                         {"propertyConfigId": prop_config_id, "value": part.function_call.args[prop_name]}
                         for prop_name, prop_config_id in property_config_ids.items()
                     ]
-                    logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
+
+                    if matching_config is not None:
+                        try: 
+                            image_config = next((p for p in matching_config.properties if p.dataType.lower() == "image"), None)
+                        except Exception:
+                            logger.info("Failed to find image property config")
+                            image_config = None
+                        
+                        if image_config is not None:
+                            properties_payload.append({"propertyConfigId": image_config.id, "value": {"src": request.query_params.get("url"), "alt": ""}})
+
+                    logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, properties_payload)
 
             entity_payload = {
                 "entityConfigId": entity_config_id,
-                "properties": payload,
+                "properties": properties_payload,
                 "tags": [],
             }
+
             create_response = await request.app.state.orbit_client.post(
                 "/entity",
                 json=entity_payload,
