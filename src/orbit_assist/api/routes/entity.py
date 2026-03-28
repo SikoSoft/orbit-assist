@@ -27,11 +27,17 @@ _DATA_TYPE_MAP = {
     "bool": "BOOLEAN",
 }
 
-def _get_property_config_id(entity_config: EntityConfig, prop_name: str) -> int:
+def _get_property_config_id_by_name(entity_config: EntityConfig, prop_name: str) -> int:
     for prop in entity_config.properties:
         if prop.name.lower() == prop_name.lower():
             return prop.id
     raise ValueError(f"Property '{prop_name}' not found in entity config '{entity_config.name}'")
+
+def _get_property_config_id_by_type(entity_config: EntityConfig, prop_type: str) -> int:
+    for prop in entity_config.properties:
+        if prop.dataType.lower() == prop_type.lower():
+            return prop.id
+    raise ValueError(f"Property of type '{prop_type}' not found in entity config '{entity_config.name}'")
 
 def _build_function_declarations(configs: list[EntityConfig]) -> list[types.FunctionDeclaration]:
     declarations = []
@@ -126,7 +132,7 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
                     entity_config_id = int(part.function_call.args.get("entityConfigId"))
                     matching_config = next((c for c in configs.entityConfigs if c.id == entity_config_id), None)
                     property_config_ids = {
-                        prop_name: _get_property_config_id(matching_config, prop_name)
+                        prop_name: _get_property_config_id_by_name(matching_config, prop_name)
                         for prop_name in part.function_call.args
                         if prop_name != "entityConfigId"
                     }
@@ -137,13 +143,14 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
 
                     if matching_config is not None:
                         try: 
-                            image_config = next((p for p in matching_config.properties if p.dataType.lower() == "image"), None)
+                            image_config_id = _get_property_config_id_by_type(matching_config, "image")
+                            # image_config = next((p for p in matching_config.properties if p.dataType.lower() == "image"), None)
                         except Exception:
                             logger.info("Failed to find image property config")
                             image_config = None
                         
-                        if image_config is not None:
-                            properties_payload.append({"propertyConfigId": image_config.id, "value": {"src": request.query_params.get("url"), "alt": ""}})
+                        if image_config_id is not None:
+                            properties_payload.append({"propertyConfigId": image_config_id, "value": {"src": request.query_params.get("url"), "alt": ""}})
 
                     logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, properties_payload)
 
