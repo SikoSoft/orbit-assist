@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import BaseModel
 
 class EntityPropertyConfig(BaseModel):
@@ -18,7 +20,7 @@ class EntityConfig(BaseModel):
     id: int
     userId: str
     name: str
-    description: str
+    description: str | None = None
     properties: list[EntityPropertyConfig]
 
 class EntityConfigResponse(BaseModel):
@@ -31,13 +33,13 @@ class PropertyImageValue(BaseModel):
 class CreateEntityProperty(BaseModel):
     id: int
     propertyConfigId: int
-    value: str | int | float | bool | PropertyImageValue
+    value: str | int | float | bool | date | PropertyImageValue
     order: int
 
 
 class CreateEntityRequest(BaseModel):
     entityConfigId: int
     properties: list[CreateEntityProperty]
-    propertyReferences: list[dict[str, str | int | float | bool]] | None = None
+    propertyReferences: list[dict[str, str | int | float | bool | date | PropertyImageValue]] | None = None
     tags: list[str] | None = None
     timeZone: int | None = None
