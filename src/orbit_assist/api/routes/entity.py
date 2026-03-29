@@ -145,13 +145,11 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
                         try: 
                             image_config_id = _get_property_config_id_by_type(matching_config, "image")
                             # image_config = next((p for p in matching_config.properties if p.dataType.lower() == "image"), None)
+                            if image_config_id is not None:
+                                properties_payload.append({"propertyConfigId": image_config_id, "value": {"src": request.query_params.get("url"), "alt": ""}})                            
                         except Exception:
                             logger.info("Failed to find image property config")
                             image_config = None
-                        
-                        if image_config_id is not None:
-                            properties_payload.append({"propertyConfigId": image_config_id, "value": {"src": request.query_params.get("url"), "alt": ""}})
-
                     logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, properties_payload)
 
             entity_payload = {
