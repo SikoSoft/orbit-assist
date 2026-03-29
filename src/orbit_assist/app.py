@@ -29,21 +29,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 def create_app() -> FastAPI:
     setup_logging()
     settings = get_settings()
-    db_pool = create_pool(settings.database_url)
+    # db_pool = create_pool(settings.database_url)
     logger.info("Creating application with settings: %s", settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.db_pool = db_pool
+        # app.state.db_pool = db_pool
         app.state.orbit_client = create_orbit_client(settings.base_api_url)
         app.state.jobs_client = create_jobs_client(settings.jobs_api_url)
         app.state.genai_client = create_genai_client(settings.gemini_api_key)
 
-        await db_pool.open()
+        # await db_pool.open()
         yield
         await app.state.orbit_client.aclose()
         await app.state.jobs_client.aclose()
-        await db_pool.close()
+        # await db_pool.close()
 
     app = FastAPI(title=settings.app_title, version=settings.app_version, lifespan=lifespan)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
