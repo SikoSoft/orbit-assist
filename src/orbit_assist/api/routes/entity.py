@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
+from pydantic import BaseModel
 from psycopg import errors as pg_errors
 from google.genai import types, errors as genai_errors
 from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse
