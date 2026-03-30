@@ -1,8 +1,7 @@
 import logging
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
-from psycopg import errors
-from pydantic import BaseModel
-from google.genai import types
+from psycopg import errors as pg_errors
+from google.genai import types, errors as genai_errors
 from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse
 
 from orbit_assist.api.deps import get_authorization_header
@@ -168,7 +167,7 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
             logger.info("Create entity response: %d %s", create_response.status_code, create_response.text)
 
 
-        except errors.APIError as e:
+        except genai_errors.APIError as e:
             # This captures the full error and puts it in ONE log entry
             logging.error(f"Gemini API failed: {e.code} - {e.message}", exc_info=True)
             # You can also return a cleaner error to your frontend here
