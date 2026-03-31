@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from psycopg import errors as pg_errors
 from google.genai import types, errors as genai_errors
-from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse
+from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, EntityResponse
 
 from orbit_assist.api.deps import get_authorization_header
 
@@ -15,6 +15,7 @@ class ImageUploadResponse(BaseModel):
     filename: str
     size: int
     content_type: str
+    entity: EntityResponse
 
 
 _DATA_TYPE_MAP = {
@@ -165,6 +166,11 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
                 headers={"authorization": token},
             )
 
+            if create_response.status_code != 200:
+                raise HTTPException(status_code=create_response.status_code, detail="Failed to create entity")
+            
+            entity = EntityResponse.model_validate(create_response.json())
+
             logger.info("Create entity response: %d %s", create_response.status_code, create_response.text)
 
 
@@ -183,6 +189,7 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
             filename=file.filename,
             size=len(image_contents),
             content_type=file.content_type,
+            entity=entity
         )
 
     except HTTPException:

@@ -43,3 +43,10 @@ class CreateEntityRequest(BaseModel):
     propertyReferences: list[dict[str, str | int | float | bool | date | PropertyImageValue]] | None = None
     tags: list[str] | None = None
     timeZone: int | None = None
+
+class EntityResponse(BaseModel):
+  id: int
+  type: int
+  createdAt: str
+  updatedAt: str
+  tags: list[str]
