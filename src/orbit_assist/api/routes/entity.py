@@ -44,6 +44,8 @@ def _get_property_config_id_by_type(entity_config: EntityConfig, prop_type: str)
 def _build_function_declarations(configs: list[EntityConfig]) -> list[types.FunctionDeclaration]:
     declarations = []
     for config in configs:
+        if not config.aiEnabled:
+            continue
         visible_props = [p for p in config.properties if not p.hidden]
         properties = {
             "entityConfigId": types.Schema(
@@ -77,13 +79,22 @@ def _build_prompt(configs: list[EntityConfig]) -> str:
         "",
         "Available entity types:",
     ]
+    custom_prompt_lines = []
     for config in configs:
         visible_props = [p for p in config.properties if not p.hidden]
         prop_list = ", ".join(
             f"{p.name} (id: {p.id}, {'required' if p.required else 'optional'})"
             for p in visible_props
         )
-        lines.append(f"  - {config.name} (id: {config.id}): {config.description}. Properties: {prop_list}")
+        if (config.aiEnabled):
+            lines.append(f"  - {config.name} (id: {config.id}): {config.description}. Properties: {prop_list}")
+        if (config.aiEnabled and config.aiIdentifyPrompt):
+            custom_prompt_lines.append(f" - {config.aiIdentifyPrompt}")
+
+    if custom_prompt_lines:
+        lines.append("")
+        lines.append("Additional instructions:")
+        lines.extend(custom_prompt_lines)
     return "\n".join(lines)
 
 
@@ -118,6 +129,8 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
 
         declarations = _build_function_declarations(configs.entityConfigs)
         prompt = _build_prompt(configs.entityConfigs)
+        logger.info("Generated %d function declarations for Gemini: %s", len(declarations), [d.name for d in declarations])
+        logger.debug("Generated prompt for Gemini: %s", prompt.replace("\n", "\\n"))
 
         try:
             genai_response = await request.app.state.genai_client.aio.models.generate_content(

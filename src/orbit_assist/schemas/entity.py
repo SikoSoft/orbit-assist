@@ -22,6 +22,8 @@ class EntityConfig(BaseModel):
     name: str
     description: str | None = None
     properties: list[EntityPropertyConfig]
+    aiEnabled: bool
+    aiIdentifyPrompt: str | None = None
 
 class EntityConfigResponse(BaseModel):
     entityConfigs: list[EntityConfig]
