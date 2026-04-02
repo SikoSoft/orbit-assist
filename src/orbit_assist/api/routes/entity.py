@@ -167,24 +167,23 @@ async def upload_image(request: Request, token: str = Depends(get_authorization_
                             image_config = None
                     logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, properties_payload)
 
-            entity_payload = {
-                "entityConfigId": entity_config_id,
-                "properties": properties_payload,
-                "tags": [],
-            }
+                    entity_payload = {
+                        "entityConfigId": entity_config_id,
+                        "properties": properties_payload,
+                        "tags": [],
+                    }
 
-            create_response = await request.app.state.orbit_client.post(
-                "/entity",
-                json=entity_payload,
-                headers={"authorization": token},
-            )
+                    create_response = await request.app.state.orbit_client.post(
+                        "/entity",
+                        json=entity_payload,
+                        headers={"authorization": token},
+                    )
 
-            if create_response.status_code != 200:
-                raise HTTPException(status_code=create_response.status_code, detail="Failed to create entity")
-            
-            entity = EntityResponse.model_validate(create_response.json())
-
-            logger.info("Create entity response: %d %s", create_response.status_code, create_response.text)
+                    if create_response.status_code != 200:
+                        raise HTTPException(status_code=create_response.status_code, detail="Failed to create entity")
+                    
+                    entity = EntityResponse.model_validate(create_response.json())
+                    logger.info("Create entity response: %d %s", create_response.status_code, create_response.text)
 
 
         except genai_errors.APIError as e:
