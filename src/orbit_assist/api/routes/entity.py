@@ -1,22 +1,14 @@
 import logging
-from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
-from pydantic import BaseModel
-from psycopg import errors as pg_errors
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from google.genai import types, errors as genai_errors
-from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, EntityResponse
-
+from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, EntityResponse, ImageUploadResponse
 from orbit_assist.api.deps import get_authorization_header
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["images"])
 
-
-class ImageUploadResponse(BaseModel):
-    filename: str
-    size: int
-    content_type: str
-    entity: EntityResponse
-
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 _DATA_TYPE_MAP = {
     "text": "STRING",
@@ -29,17 +21,20 @@ _DATA_TYPE_MAP = {
     "bool": "BOOLEAN",
 }
 
+
 def _get_property_config_id_by_name(entity_config: EntityConfig, prop_name: str) -> int:
     for prop in entity_config.properties:
         if prop.name.lower() == prop_name.lower():
             return prop.id
     raise ValueError(f"Property '{prop_name}' not found in entity config '{entity_config.name}'")
 
+
 def _get_property_config_id_by_type(entity_config: EntityConfig, prop_type: str) -> int:
     for prop in entity_config.properties:
         if prop.dataType.lower() == prop_type.lower():
             return prop.id
     raise ValueError(f"Property of type '{prop_type}' not found in entity config '{entity_config.name}'")
+
 
 def _build_function_declarations(configs: list[EntityConfig]) -> list[types.FunctionDeclaration]:
     declarations = []
@@ -72,6 +67,7 @@ def _build_function_declarations(configs: list[EntityConfig]) -> list[types.Func
         ))
     return declarations
 
+
 def _build_prompt(configs: list[EntityConfig]) -> str:
     lines = [
         "Analyze the uploaded image and identify any entities present.",
@@ -81,14 +77,15 @@ def _build_prompt(configs: list[EntityConfig]) -> str:
     ]
     custom_prompt_lines = []
     for config in configs:
+        if not config.aiEnabled:
+            continue
         visible_props = [p for p in config.properties if not p.hidden]
         prop_list = ", ".join(
             f"{p.name} (id: {p.id}, {'required' if p.required else 'optional'})"
             for p in visible_props
         )
-        if (config.aiEnabled):
-            lines.append(f"  - {config.name} (id: {config.id}): {config.description}. Properties: {prop_list}")
-        if (config.aiEnabled and config.aiIdentifyPrompt):
+        lines.append(f"  - {config.name} (id: {config.id}): {config.description}. Properties: {prop_list}")
+        if config.aiIdentifyPrompt:
             custom_prompt_lines.append(f" - {config.aiIdentifyPrompt}")
 
     if custom_prompt_lines:
@@ -98,114 +95,93 @@ def _build_prompt(configs: list[EntityConfig]) -> str:
     return "\n".join(lines)
 
 
-@router.post("/assist/entity", response_model=ImageUploadResponse)
-async def upload_image(request: Request, token: str = Depends(get_authorization_header), file: UploadFile = File(...)) -> ImageUploadResponse:
-    try:
-        config_response = await request.app.state.orbit_client.get(
-            "/entityConfig",
-            headers={"authorization": token},
-        )
+def _build_entity_payload(function_call, configs: list[EntityConfig], image_url: str | None) -> dict:
+    entity_config_id = int(function_call.args.get("entityConfigId"))
+    matching_config = next((c for c in configs if c.id == entity_config_id), None)
 
-        if config_response.status_code != 200:
-            raise HTTPException(status_code=config_response.status_code, detail="Failed to fetch entity config")
+    property_config_ids = {
+        prop_name: _get_property_config_id_by_name(matching_config, prop_name)
+        for prop_name in function_call.args
+        if prop_name != "entityConfigId"
+    }
+    properties = [
+        {"propertyConfigId": prop_config_id, "value": function_call.args[prop_name]}
+        for prop_name, prop_config_id in property_config_ids.items()
+    ]
 
-        configs = EntityConfigResponse.model_validate(config_response.json())
-        logger.info("Fetched %d entity configs: %s", len(configs.entityConfigs), [c.name for c in configs.entityConfigs])
-
-        allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-        if file.content_type not in allowed_types:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
-            )
-
-        max_size = 5 * 1024 * 1024
-        image_contents = await file.read()
-        if len(image_contents) > max_size:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Max size: {max_size / 1024 / 1024}MB"
-            )
-
-        declarations = _build_function_declarations(configs.entityConfigs)
-        prompt = _build_prompt(configs.entityConfigs)
-        logger.info("Generated %d function declarations for Gemini: %s", len(declarations), [d.name for d in declarations])
-        logger.debug("Generated prompt for Gemini: %s", prompt.replace("\n", "\\n"))
-
+    if matching_config is not None:
         try:
-            genai_response = await request.app.state.genai_client.aio.models.generate_content(
-                model="models/gemini-3.1-flash-lite-preview",
-                contents=[
-                    types.Part.from_bytes(data=image_contents, mime_type=file.content_type),
-                    prompt,
-                ],
-                config=types.GenerateContentConfig(tools=[types.Tool(function_declarations=declarations)])
+            image_config_id = _get_property_config_id_by_type(matching_config, "image")
+            properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}})
+        except Exception:
+            logger.info("No image property found in config")
+
+    return {"entityConfigId": entity_config_id, "properties": properties, "tags": []}
+
+
+async def _fetch_configs(orbit_client, token: str) -> list[EntityConfig]:
+    response = await orbit_client.get("/entityConfig", headers={"authorization": token})
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch entity config")
+    configs = EntityConfigResponse.model_validate(response.json())
+    logger.info("Fetched %d entity configs: %s", len(configs.entityConfigs), [c.name for c in configs.entityConfigs])
+    return configs.entityConfigs
+
+
+async def _validate_file(file: UploadFile) -> bytes:
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(_ALLOWED_IMAGE_TYPES)}")
+    contents = await file.read()
+    if len(contents) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File too large. Max size: {_MAX_FILE_SIZE / 1024 / 1024:.0f}MB")
+    return contents
+
+
+async def _create_entity(orbit_client, token: str, payload: dict) -> EntityResponse:
+    response = await orbit_client.post("/entity", json=payload, headers={"authorization": token})
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to create entity")
+    logger.info("Created entity: %d %s", response.status_code, response.text)
+    return EntityResponse.model_validate(response.json())
+
+
+@router.post("/assist/entity", response_model=ImageUploadResponse)
+async def upload_image(
+    request: Request,
+    token: str = Depends(get_authorization_header),
+    file: UploadFile = File(...),
+) -> ImageUploadResponse:
+    configs = await _fetch_configs(request.app.state.orbit_client, token)
+    image_contents = await _validate_file(file)
+
+    declarations = _build_function_declarations(configs)
+    prompt = _build_prompt(configs)
+    logger.info("Generated %d function declarations: %s", len(declarations), [d.name for d in declarations])
+    logger.debug("Prompt: %s", prompt.replace("\n", "\\n"))
+
+    try:
+        genai_response = await request.app.state.genai_client.aio.models.generate_content(
+            model="models/gemini-3.1-flash-lite-preview",
+            contents=[
+                types.Part.from_bytes(data=image_contents, mime_type=file.content_type),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(tools=[types.Tool(function_declarations=declarations)])
+        )
+    except genai_errors.APIError as e:
+        logger.error("Gemini API failed: %s - %s", e.code, e.message, exc_info=True)
+        raise HTTPException(status_code=502, detail="Gemini API error")
+
+    for part in genai_response.candidates[0].content.parts:
+        if part.function_call:
+            payload = _build_entity_payload(part.function_call, configs, request.query_params.get("url"))
+            logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
+            entity = await _create_entity(request.app.state.orbit_client, token, payload)
+            return ImageUploadResponse(
+                filename=file.filename,
+                size=len(image_contents),
+                content_type=file.content_type,
+                entity=entity,
             )
 
-            for part in genai_response.candidates[0].content.parts:
-                if part.function_call:
-                    entity_config_id = int(part.function_call.args.get("entityConfigId"))
-                    matching_config = next((c for c in configs.entityConfigs if c.id == entity_config_id), None)
-                    property_config_ids = {
-                        prop_name: _get_property_config_id_by_name(matching_config, prop_name)
-                        for prop_name in part.function_call.args
-                        if prop_name != "entityConfigId"
-                    }
-                    properties_payload = [
-                        {"propertyConfigId": prop_config_id, "value": part.function_call.args[prop_name]}
-                        for prop_name, prop_config_id in property_config_ids.items()
-                    ]
-
-                    if matching_config is not None:
-                        try: 
-                            image_config_id = _get_property_config_id_by_type(matching_config, "image")
-                            # image_config = next((p for p in matching_config.properties if p.dataType.lower() == "image"), None)
-                            if image_config_id is not None:
-                                properties_payload.append({"propertyConfigId": image_config_id, "value": {"src": request.query_params.get("url"), "alt": ""}})                            
-                        except Exception:
-                            logger.info("Failed to find image property config")
-                            image_config = None
-                    logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, properties_payload)
-
-                    entity_payload = {
-                        "entityConfigId": entity_config_id,
-                        "properties": properties_payload,
-                        "tags": [],
-                    }
-
-                    create_response = await request.app.state.orbit_client.post(
-                        "/entity",
-                        json=entity_payload,
-                        headers={"authorization": token},
-                    )
-
-                    if create_response.status_code != 200:
-                        raise HTTPException(status_code=create_response.status_code, detail="Failed to create entity")
-                    
-                    entity = EntityResponse.model_validate(create_response.json())
-                    logger.info("Create entity response: %d %s", create_response.status_code, create_response.text)
-
-
-        except genai_errors.APIError as e:
-            # This captures the full error and puts it in ONE log entry
-            logging.error(f"Gemini API failed: {e.code} - {e.message}", exc_info=True)
-            # You can also return a cleaner error to your frontend here
-            raise
-
-
-        except Exception:
-            logger.exception("Gemini processing failed")
-            raise HTTPException(status_code=500, detail="Failed to process image with Gemini")
-
-        return ImageUploadResponse(
-            filename=file.filename,
-            size=len(image_contents),
-            content_type=file.content_type,
-            entity=entity
-        )
-
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Image upload failed")
-        raise HTTPException(status_code=500, detail="Failed to process image")
+    raise HTTPException(status_code=422, detail="Gemini did not identify any entity in the image")

@@ -52,3 +52,9 @@ class EntityResponse(BaseModel):
   createdAt: str
   updatedAt: str
   tags: list[str]
+
+class ImageUploadResponse(BaseModel):
+    filename: str
+    size: int
+    content_type: str
+    entity: EntityResponse
