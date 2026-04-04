@@ -21,6 +21,12 @@ _DATA_TYPE_MAP = {
     "bool": "BOOLEAN",
 }
 
+_COERCE_MAP = {
+    "INTEGER": int,
+    "NUMBER": float,
+    "BOOLEAN": bool,
+}
+
 
 def _get_property_config_id_by_name(entity_config: EntityConfig, prop_name: str) -> int:
     for prop in entity_config.properties:
@@ -95,17 +101,30 @@ def _build_prompt(configs: list[EntityConfig]) -> str:
     return "\n".join(lines)
 
 
+def _coerce_value(value, prop_data_type: str):
+    schema_type = _DATA_TYPE_MAP.get(prop_data_type.lower(), "STRING")
+    coerce = _COERCE_MAP.get(schema_type)
+    return coerce(value) if coerce is not None else value
+
+
 def _build_entity_payload(function_call, configs: list[EntityConfig], image_url: str | None) -> dict:
     entity_config_id = int(function_call.args.get("entityConfigId"))
     matching_config = next((c for c in configs if c.id == entity_config_id), None)
 
+    prop_config_by_name = {prop.name.lower(): prop for prop in matching_config.properties}
     property_config_ids = {
         prop_name: _get_property_config_id_by_name(matching_config, prop_name)
         for prop_name in function_call.args
         if prop_name != "entityConfigId"
     }
     properties = [
-        {"propertyConfigId": prop_config_id, "value": function_call.args[prop_name]}
+        {
+            "propertyConfigId": prop_config_id,
+            "value": _coerce_value(
+                function_call.args[prop_name],
+                prop_config_by_name[prop_name.lower()].dataType,
+            ),
+        }
         for prop_name, prop_config_id in property_config_ids.items()
     ]
 
