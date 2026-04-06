@@ -124,14 +124,15 @@ def _build_entity_payload(function_call, configs: list[EntityConfig], image_url:
                 function_call.args[prop_name],
                 prop_config_by_name[prop_name.lower()].dataType,
             ),
+            "order": order,
         }
-        for prop_name, prop_config_id in property_config_ids.items()
+        for order, (prop_name, prop_config_id) in enumerate(property_config_ids.items())
     ]
 
     if matching_config is not None:
         try:
             image_config_id = _get_property_config_id_by_type(matching_config, "image")
-            properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}})
+            properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}, "order": len(properties)})
         except Exception:
             logger.info("No image property found in config")
 
