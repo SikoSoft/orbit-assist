@@ -108,7 +108,7 @@ def _coerce_value(value, prop_data_type: str):
     return coerce(value) if coerce is not None else value
 
 
-def _build_entity_payload(function_call, configs: list[EntityConfig], image_url: str | None) -> dict:
+def _build_entity_payload(function_call, configs: list[EntityConfig], image_url: str | None, time_zone: int | None) -> dict:
     entity_config_id = int(function_call.args.get("entityConfigId"))
     matching_config = next((c for c in configs if c.id == entity_config_id), None)
 
@@ -146,7 +146,7 @@ def _build_entity_payload(function_call, configs: list[EntityConfig], image_url:
         except Exception:
             logger.info("No image property found in config")
 
-    return {"entityConfigId": entity_config_id, "properties": properties, "tags": []}
+    return {"entityConfigId": entity_config_id, "properties": properties, "tags": [], "timeZone": time_zone}
 
 
 async def _fetch_configs(orbit_client, token: str) -> list[EntityConfig]:
@@ -205,7 +205,7 @@ async def upload_image(
 
     for part in genai_response.candidates[0].content.parts:
         if part.function_call:
-            payload = _build_entity_payload(part.function_call, configs, request.query_params.get("url"))
+            payload = _build_entity_payload(part.function_call, configs, request.query_params.get("url"), int(request.query_params.get("timeZone")))
             logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
             entity = await _create_entity(request.app.state.orbit_client, token, payload)
             return ImageUploadResponse(
