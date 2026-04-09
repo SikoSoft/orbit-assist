@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from google.genai import types, errors as genai_errors
 from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, EntityResponse, ImageUploadResponse
@@ -47,7 +48,7 @@ def _build_function_declarations(configs: list[EntityConfig]) -> list[types.Func
     for config in configs:
         if not config.aiEnabled:
             continue
-        visible_props = [p for p in config.properties if not p.hidden]
+        visible_props = [p for p in config.properties if not p.hidden and p.name.lower() != "occurred at"]
         properties = {
             "entityConfigId": types.Schema(
                 type="INTEGER",
@@ -130,6 +131,15 @@ def _build_entity_payload(function_call, configs: list[EntityConfig], image_url:
     ]
 
     if matching_config is not None:
+        for prop in matching_config.properties:
+            if prop.name.lower() == "occurred at":
+                properties.append({
+                    "propertyConfigId": prop.id,
+                    "value": datetime.now(timezone.utc).isoformat(),
+                    "order": len(properties),
+                })
+                break
+
         try:
             image_config_id = _get_property_config_id_by_type(matching_config, "image")
             properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}, "order": len(properties)})
@@ -144,6 +154,7 @@ async def _fetch_configs(orbit_client, token: str) -> list[EntityConfig]:
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Failed to fetch entity config")
     configs = EntityConfigResponse.model_validate(response.json())
+    logger.debug("Fetched entity configs response: %s", configs)
     logger.info("Fetched %d entity configs: %s", len(configs.entityConfigs), [c.name for c in configs.entityConfigs])
     return configs.entityConfigs
 

@@ -46,12 +46,19 @@ class CreateEntityRequest(BaseModel):
     tags: list[str] | None = None
     timeZone: int | None = None
 
+class EntityProperty(BaseModel):
+    id: int
+    propertyConfigId: int
+    value: str | int | float | bool | date | PropertyImageValue
+    order: int
+
 class EntityResponse(BaseModel):
   id: int
   type: int
   createdAt: str
   updatedAt: str
   tags: list[str]
+  properties: list[EntityProperty]
 
 class ImageUploadResponse(BaseModel):
     filename: str
