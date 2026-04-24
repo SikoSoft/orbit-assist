@@ -29,13 +29,6 @@ _COERCE_MAP = {
 }
 
 
-def _get_property_config_id_by_name(entity_config: EntityConfig, prop_name: str) -> int:
-    for prop in entity_config.properties:
-        if prop.name.lower() == prop_name.lower():
-            return prop.id
-    raise ValueError(f"Property '{prop_name}' not found in entity config '{entity_config.name}'")
-
-
 def _get_property_config_id_by_type(entity_config: EntityConfig, prop_type: str) -> int:
     for prop in entity_config.properties:
         if prop.dataType.lower() == prop_type.lower():
@@ -113,22 +106,20 @@ def _build_entity_payload(function_call, configs: list[EntityConfig], image_url:
     matching_config = next((c for c in configs if c.id == entity_config_id), None)
 
     prop_config_by_name = {prop.name.lower(): prop for prop in matching_config.properties}
-    property_config_ids = {
-        prop_name: _get_property_config_id_by_name(matching_config, prop_name)
-        for prop_name in function_call.args
-        if prop_name != "entityConfigId"
-    }
-    properties = [
-        {
-            "propertyConfigId": prop_config_id,
-            "value": _coerce_value(
-                function_call.args[prop_name],
-                prop_config_by_name[prop_name.lower()].dataType,
-            ),
-            "order": order,
-        }
-        for order, (prop_name, prop_config_id) in enumerate(property_config_ids.items())
-    ]
+    prop_order_by_id = {prop.id: i for i, prop in enumerate(matching_config.properties)}
+
+    properties = []
+    for prop_name, value in function_call.args.items():
+        if prop_name == "entityConfigId":
+            continue
+        prop = prop_config_by_name.get(prop_name.lower())
+        if prop is None:
+            continue
+        properties.append({
+            "propertyConfigId": prop.id,
+            "value": _coerce_value(value, prop.dataType),
+            "order": prop_order_by_id[prop.id],
+        })
 
     if matching_config is not None:
         for prop in matching_config.properties:
@@ -136,14 +127,14 @@ def _build_entity_payload(function_call, configs: list[EntityConfig], image_url:
                 properties.append({
                     "propertyConfigId": prop.id,
                     "value": datetime.now(timezone.utc).isoformat(),
-                    "order": len(properties),
+                    "order": prop_order_by_id[prop.id],
                 })
                 break
 
         try:
             image_config_id = _get_property_config_id_by_type(matching_config, "image")
             if image_url:
-                properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}, "order": len(properties)})
+                properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}, "order": prop_order_by_id[image_config_id]})
         except Exception:
             logger.info("No image property found in config")
 
