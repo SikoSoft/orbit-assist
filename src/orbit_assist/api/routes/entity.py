@@ -51,6 +51,7 @@ def _build_function_declarations(configs: list[EntityConfig]) -> list[types.Func
                 prop.name: types.Schema(
                     type=_DATA_TYPE_MAP.get(prop.dataType.lower(), "STRING"),
                     description=prop.name,
+                    **({"enum": prop.options} if prop.optionsOnly and prop.options else {})
                 )
                 for prop in visible_props
             },

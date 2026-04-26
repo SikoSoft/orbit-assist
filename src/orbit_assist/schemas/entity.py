@@ -14,6 +14,8 @@ class EntityPropertyConfig(BaseModel):
     suffix: str
     hidden: bool
     dataType: str
+    optionsOnly: bool
+    options: list[str] | None = None
     # defaultValue: any
 
 class EntityConfig(BaseModel):
