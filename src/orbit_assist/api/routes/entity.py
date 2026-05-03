@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from google.genai import types, errors as genai_errors
-from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, EntityResponse, ImageUploadResponse
+from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, Entity, ImageUploadResponse
 from orbit_assist.api.deps import get_authorization_header
 
 logger = logging.getLogger(__name__)
@@ -161,12 +161,12 @@ async def _validate_file(file: UploadFile) -> bytes:
     return contents
 
 
-async def _create_entity(orbit_client, token: str, payload: dict) -> EntityResponse:
+async def _create_entity(orbit_client, token: str, payload: dict) -> Entity:
     response = await orbit_client.post("/entity", json=payload, headers={"authorization": token})
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Failed to create entity")
     logger.info("Created entity: %d %s", response.status_code, response.text)
-    return EntityResponse.model_validate(response.json())
+    return Entity.model_validate(response.json())
 
 
 @router.post("/assist/entity", response_model=ImageUploadResponse)

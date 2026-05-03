@@ -1,6 +1,8 @@
 from datetime import date
+from enum import Enum
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class EntityPropertyConfig(BaseModel):
     entityConfigId: int
@@ -54,7 +56,7 @@ class EntityProperty(BaseModel):
     value: str | int | float | bool | date | PropertyImageValue
     order: int
 
-class EntityResponse(BaseModel):
+class Entity(BaseModel):
   id: int
   type: int
   createdAt: str
@@ -66,4 +68,88 @@ class ImageUploadResponse(BaseModel):
     filename: str
     size: int
     content_type: str
-    entity: EntityResponse
+    entity: Entity
+
+class SuggestEntityResponse(BaseModel):
+    entity: list[Entity]
+
+class SuggestedProperty(BaseModel):
+    propertyConfigId: int
+    value: str | int | float | bool
+
+class EntitySuggestion(BaseModel):
+    entityConfigId: int
+    entityConfigName: str
+    properties: list[SuggestedProperty]
+    hour: int
+
+class EntityAnalysisResponse(BaseModel):
+    suggestions: list[EntitySuggestion]
+
+
+class ListFilterType(str, Enum):
+    CONTAINS_ONE_OF = "containsOneOf"
+    CONTAINS_ALL_OF = "containsAllOf"
+
+
+class ListFilterTimeType(str, Enum):
+    ALL_TIME = "allTime"
+    EXACT_DATE = "exactDate"
+    RANGE = "range"
+
+
+class AllTimeContext(BaseModel):
+    type: Literal[ListFilterTimeType.ALL_TIME]
+
+
+class ExactDateContext(BaseModel):
+    type: Literal[ListFilterTimeType.EXACT_DATE]
+    date: str
+
+
+class RangeContext(BaseModel):
+    type: Literal[ListFilterTimeType.RANGE]
+    start: str
+    end: str
+
+
+TimeContext = Annotated[
+    Union[AllTimeContext, ExactDateContext, RangeContext],
+    Field(discriminator="type"),
+]
+
+
+class TextType(str, Enum):
+    CONTAINS = "contains"
+    STARTS_WITH = "startsWith"
+    ENDS_WITH = "endsWith"
+    EQUALS = "equals"
+
+
+class TextContext(BaseModel):
+    type: TextType
+    subStr: str
+
+
+TaggingContext = dict[ListFilterType, list[str]]
+
+
+class FilterProperty(BaseModel):
+    propertyId: int
+    value: str | int | float | bool | date | PropertyImageValue
+    operation: TextType
+
+
+class ListFilter(BaseModel):
+    tagging: TaggingContext
+    includeUntagged: bool
+    includeAll: bool
+    includeAllTagging: bool
+    includeTypes: list[int]
+    time: TimeContext
+    properties: list[FilterProperty]
+
+
+class ListConfig(BaseModel):
+    id: str
+    filter: ListFilter | None = None
