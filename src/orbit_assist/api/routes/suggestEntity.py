@@ -11,13 +11,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["images"])
 
 
-def _build_prompt(entities: list[Entity]) -> str:
+def _keep_property(value) -> bool:
+    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def _filter_entity_properties(entities: list) -> list:
+    result = []
+    for entity in entities:
+        filtered = [
+            p for p in entity.get("properties", [])
+            if _keep_property(p.get("value"))
+        ]
+        result.append({**entity, "properties": filtered})
+    return result
+
+
+def _build_prompt(entities: list) -> str:
+    filtered = _filter_entity_properties(entities)
     lines = [
         "You are an assistant for a user of a activity tracking management platform called Orbit. Your job is to review the items created in the past week and identify any commonly added entries, and the approximate hour window in which they typically occur. You should only identify entities that you are confident are present in the content.",
+        "Two entries are considered the same if they share identical propertyConfigId and value pairs across all non-date properties. Treat any entries that differ only in date-typed properties as matches.",
         "",
         "Past weeks entries:",
     ]
-    lines.append(json.dumps(entities, indent=2))
+    lines.append(json.dumps(filtered, indent=2))
     return "\n".join(lines)
 
 
