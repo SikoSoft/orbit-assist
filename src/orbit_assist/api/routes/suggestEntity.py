@@ -37,8 +37,9 @@ def _filter_entity_properties(entities: list, offset_minutes: int = 0) -> list:
 def _build_prompt(entities: list, offset_minutes: int = 0) -> str:
     filtered = _filter_entity_properties(entities, offset_minutes)
     lines = [
-        "You are an assistant for a user of a activity tracking management platform called Orbit. Your job is to review the items created in the past week and identify any commonly added entries, and the approximate hour window in which they typically occur. You should only identify entities that you are confident are present in the content.",
+        "You are an assistant for a user of a activity tracking management platform called Orbit. Your job is to review the items created in the past week and identify any commonly added entries, and the average time (hour and minute) at which they are typically created. You should only identify entities that you are confident are present in the content.",
         "Two entries are considered the same if they share identical propertyConfigId and value pairs across all non-date properties. Treat any entries that differ only in date-typed properties as matches.",
+        "For each identified suggestion, determine the average hour and average minute across all matching entries and return both values.",
         "",
         "Past weeks entries:",
     ]
@@ -75,6 +76,19 @@ async def _fetch_entities(orbit_client, token: str, list_filter: ListFilter):
     return response.json().get("entities", [])
 
 
+async def _post_suggested_entities(orbit_client, token: str, payloads: list, date_str: str):
+    body = [p.model_dump(exclude={"suggestion"}, exclude_none=True) for p in payloads]
+    response = await orbit_client.post(
+        f"/suggestEntity/{date_str}",
+        json=body,
+        headers={"authorization": token},
+    )
+    if response.status_code == 409:
+        logger.info("Suggested entities already exist for %s: %s", date_str, response.text)
+    elif response.status_code != 200:
+        logger.error("Failed to post suggested entities: %d %s", response.status_code, response.text)
+
+
 @router.get("/assist/suggestEntity", response_model=EntityAnalysisResponse)
 async def suggest_entity(
     request: Request,
@@ -89,7 +103,6 @@ async def suggest_entity(
         entities = await _fetch_entities(request.app.state.orbit_client, token, entity_filter)
 
         logger.info("Fetched entities:\n%s", json.dumps(entities, indent=2))
-
 
     prompt = _build_prompt(entities, offset_minutes)
     logger.debug("Prompt: %s", prompt.replace("\n", "\\n"))
@@ -111,15 +124,23 @@ async def suggest_entity(
 
     analysis = EntityAnalysisResponse.model_validate_json(genai_response.text)
 
+    tomorrow = (datetime.now() + timedelta(days=1)).date()
+    tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+
     configs = await fetch_configs(request.app.state.orbit_client, token)
+    payloads = []
     for suggestion_item in analysis.suggestions:
         property_values = {p.propertyConfigId: p.value for p in suggestion_item.properties}
+        created_at = f"{tomorrow_str}T{suggestion_item.hour:02d}:{suggestion_item.minute:02d}:00"
         payload = build_entity_payload(
             suggestion_item.type,
             property_values,
             configs,
             suggestion=True,
         )
-        await create_entity(request.app.state.orbit_client, token, payload)
+        payload.createdAt = created_at
+        payloads.append(payload)
+
+    await _post_suggested_entities(request.app.state.orbit_client, token, payloads, tomorrow_str)
 
     return analysis

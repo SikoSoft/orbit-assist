@@ -50,6 +50,7 @@ class CreateEntityRequest(BaseModel):
     tags: list[str] | None = None
     timeZone: int | None = None
     suggestion: bool = False
+    createdAt: str | None = None
 
 class EntityProperty(BaseModel):
     id: int
@@ -82,6 +83,7 @@ class EntitySuggestion(BaseModel):
     type: int
     properties: list[SuggestedProperty]
     hour: int
+    minute: int
 
 class EntityAnalysisResponse(BaseModel):
     suggestions: list[EntitySuggestion]
