@@ -37,7 +37,7 @@ class PropertyImageValue(BaseModel):
     alt: str
 
 class CreateEntityProperty(BaseModel):
-    id: int
+    id: int | None = None
     propertyConfigId: int
     value: str | int | float | bool | date | PropertyImageValue
     order: int
@@ -49,6 +49,7 @@ class CreateEntityRequest(BaseModel):
     propertyReferences: list[dict[str, str | int | float | bool | date | PropertyImageValue]] | None = None
     tags: list[str] | None = None
     timeZone: int | None = None
+    suggestion: bool = False
 
 class EntityProperty(BaseModel):
     id: int
@@ -78,8 +79,7 @@ class SuggestedProperty(BaseModel):
     value: str | int | float | bool
 
 class EntitySuggestion(BaseModel):
-    entityConfigId: int
-    entityConfigName: str
+    type: int
     properties: list[SuggestedProperty]
     hour: int
 

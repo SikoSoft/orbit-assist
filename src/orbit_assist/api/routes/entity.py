@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime, timezone
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from google.genai import types, errors as genai_errors
-from orbit_assist.schemas.entity import EntityConfig, EntityConfigResponse, Entity, ImageUploadResponse
+from orbit_assist.schemas.entity import EntityConfig, ImageUploadResponse
 from orbit_assist.api.deps import get_authorization_header
+from orbit_assist.core.entity import build_entity_payload, create_entity, fetch_configs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["images"])
@@ -27,13 +28,6 @@ _COERCE_MAP = {
     "NUMBER": float,
     "BOOLEAN": bool,
 }
-
-
-def _get_property_config_id_by_type(entity_config: EntityConfig, prop_type: str) -> int:
-    for prop in entity_config.properties:
-        if prop.dataType.lower() == prop_type.lower():
-            return prop.id
-    raise ValueError(f"Property of type '{prop_type}' not found in entity config '{entity_config.name}'")
 
 
 def _build_function_declarations(configs: list[EntityConfig]) -> list[types.FunctionDeclaration]:
@@ -102,54 +96,17 @@ def _coerce_value(value, prop_data_type: str):
     return coerce(value) if coerce is not None else value
 
 
-def _build_entity_payload(function_call, configs: list[EntityConfig], image_url: str | None, time_zone: int | None) -> dict:
+def _properties_from_function_call(function_call, configs: list[EntityConfig]) -> tuple[int, dict[int, Any]]:
     entity_config_id = int(function_call.args.get("entityConfigId"))
     matching_config = next((c for c in configs if c.id == entity_config_id), None)
-
     prop_config_by_name = {prop.name.lower(): prop for prop in matching_config.properties}
-    prop_order_by_id = {prop.id: i for i, prop in enumerate(matching_config.properties)}
-
-    properties = []
-    for prop_name, value in function_call.args.items():
-        if prop_name == "entityConfigId":
-            continue
-        prop = prop_config_by_name.get(prop_name.lower())
-        if prop is None:
-            continue
-        properties.append({
-            "propertyConfigId": prop.id,
-            "value": _coerce_value(value, prop.dataType),
-            "order": prop_order_by_id[prop.id],
-        })
-
-    if matching_config is not None:
-        for prop in matching_config.properties:
-            if prop.name.lower() == "occurred at":
-                properties.append({
-                    "propertyConfigId": prop.id,
-                    "value": datetime.now(timezone.utc).isoformat(),
-                    "order": prop_order_by_id[prop.id],
-                })
-                break
-
-        try:
-            image_config_id = _get_property_config_id_by_type(matching_config, "image")
-            if image_url:
-                properties.append({"propertyConfigId": image_config_id, "value": {"src": image_url, "alt": ""}, "order": prop_order_by_id[image_config_id]})
-        except Exception:
-            logger.info("No image property found in config")
-
-    return {"entityConfigId": entity_config_id, "properties": properties, "tags": [], "timeZone": time_zone}
-
-
-async def _fetch_configs(orbit_client, token: str) -> list[EntityConfig]:
-    response = await orbit_client.get("/entityConfig", headers={"authorization": token})
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Failed to fetch entity config")
-    configs = EntityConfigResponse.model_validate(response.json())
-    logger.debug("Fetched entity configs response: %s", configs)
-    logger.info("Fetched %d entity configs: %s", len(configs.entityConfigs), [c.name for c in configs.entityConfigs])
-    return configs.entityConfigs
+    property_values = {
+        prop.id: _coerce_value(value, prop.dataType)
+        for prop_name, value in function_call.args.items()
+        if prop_name != "entityConfigId"
+        and (prop := prop_config_by_name.get(prop_name.lower())) is not None
+    }
+    return entity_config_id, property_values
 
 
 async def _validate_file(file: UploadFile) -> bytes:
@@ -161,21 +118,13 @@ async def _validate_file(file: UploadFile) -> bytes:
     return contents
 
 
-async def _create_entity(orbit_client, token: str, payload: dict) -> Entity:
-    response = await orbit_client.post("/entity", json=payload, headers={"authorization": token})
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Failed to create entity")
-    logger.info("Created entity: %d %s", response.status_code, response.text)
-    return Entity.model_validate(response.json())
-
-
 @router.post("/assist/entity", response_model=ImageUploadResponse)
 async def upload_image(
     request: Request,
     token: str = Depends(get_authorization_header),
     file: UploadFile = File(...),
 ) -> ImageUploadResponse:
-    configs = await _fetch_configs(request.app.state.orbit_client, token)
+    configs = await fetch_configs(request.app.state.orbit_client, token)
     image_contents = await _validate_file(file)
 
     declarations = _build_function_declarations(configs)
@@ -198,9 +147,16 @@ async def upload_image(
 
     for part in genai_response.candidates[0].content.parts:
         if part.function_call:
-            payload = _build_entity_payload(part.function_call, configs, request.query_params.get("url"), int(request.query_params.get("timeZone")))
+            entity_config_id, property_values = _properties_from_function_call(part.function_call, configs)
+            payload = build_entity_payload(
+                entity_config_id,
+                property_values,
+                configs,
+                image_url=request.query_params.get("url"),
+                time_zone=int(request.query_params.get("timeZone")),
+            )
             logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
-            entity = await _create_entity(request.app.state.orbit_client, token, payload)
+            entity = await create_entity(request.app.state.orbit_client, token, payload)
             return ImageUploadResponse(
                 filename=file.filename,
                 size=len(image_contents),

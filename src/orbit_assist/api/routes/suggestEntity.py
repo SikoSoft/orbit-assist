@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from google.genai import types, errors as genai_errors
 from orbit_assist.schemas.entity import EntityAnalysisResponse, EntityConfig, EntityConfigResponse, ListConfig, ListFilter, ListFilterTimeType, RangeContext
 from orbit_assist.api.deps import get_authorization_header
+from orbit_assist.core.entity import build_entity_payload, create_entity, fetch_configs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["images"])
@@ -15,19 +16,26 @@ def _keep_property(value) -> bool:
     return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
 
 
-def _filter_entity_properties(entities: list) -> list:
+def _convert_timestamp(ts: str, offset_minutes: int) -> str:
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return (dt + timedelta(minutes=offset_minutes)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _filter_entity_properties(entities: list, offset_minutes: int = 0) -> list:
     result = []
     for entity in entities:
         filtered = [
-            p for p in entity.get("properties", [])
+            {"propertyConfigId": p["propertyConfigId"], "value": p["value"]}
+            for p in entity.get("properties", [])
             if _keep_property(p.get("value"))
         ]
-        result.append({**entity, "properties": filtered})
+        created_at = _convert_timestamp(entity["createdAt"], offset_minutes)
+        result.append({"createdAt": created_at, "properties": filtered})
     return result
 
 
-def _build_prompt(entities: list) -> str:
-    filtered = _filter_entity_properties(entities)
+def _build_prompt(entities: list, offset_minutes: int = 0) -> str:
+    filtered = _filter_entity_properties(entities, offset_minutes)
     lines = [
         "You are an assistant for a user of a activity tracking management platform called Orbit. Your job is to review the items created in the past week and identify any commonly added entries, and the approximate hour window in which they typically occur. You should only identify entities that you are confident are present in the content.",
         "Two entries are considered the same if they share identical propertyConfigId and value pairs across all non-date properties. Treat any entries that differ only in date-typed properties as matches.",
@@ -61,28 +69,29 @@ def _apply_time_range_filter(list_filter: ListFilter) -> ListFilter:
 
 async def _fetch_entities(orbit_client, token: str, list_filter: ListFilter):
     filter_encoded = urllib.parse.quote(list_filter.model_dump_json())
-    response = await orbit_client.get(f"/entity?filter={filter_encoded}", headers={"authorization": token})
+    response = await orbit_client.get(f"/entity?perPage=0&filter={filter_encoded}", headers={"authorization": token})
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Failed to fetch entities")
-    return response.json()
+    return response.json().get("entities", [])
 
 
 @router.get("/assist/suggestEntity", response_model=EntityAnalysisResponse)
 async def suggest_entity(
     request: Request,
     list_config_id: str = Query(..., alias="listConfigId"),
+    timezone: str = Query("0"),
     token: str = Depends(get_authorization_header),
 ) -> EntityAnalysisResponse:
+    offset_minutes = int(timezone)
     list_config = await _fetch_list_config(request.app.state.orbit_client, token, list_config_id)
     if list_config.filter:
         entity_filter = _apply_time_range_filter(list_config.filter)
         entities = await _fetch_entities(request.app.state.orbit_client, token, entity_filter)
 
-        logger.info("Fetched entities: %s", entities)
-        print("Entities:", entities)
+        logger.info("Fetched entities:\n%s", json.dumps(entities, indent=2))
 
 
-    prompt = _build_prompt(entities)
+    prompt = _build_prompt(entities, offset_minutes)
     logger.debug("Prompt: %s", prompt.replace("\n", "\\n"))
 
     try:
@@ -100,4 +109,17 @@ async def suggest_entity(
 
     logger.info("Gemini response: %s", genai_response.text)
 
-    return EntityAnalysisResponse.model_validate_json(genai_response.text)
+    analysis = EntityAnalysisResponse.model_validate_json(genai_response.text)
+
+    configs = await fetch_configs(request.app.state.orbit_client, token)
+    for suggestion_item in analysis.suggestions:
+        property_values = {p.propertyConfigId: p.value for p in suggestion_item.properties}
+        payload = build_entity_payload(
+            suggestion_item.type,
+            property_values,
+            configs,
+            suggestion=True,
+        )
+        await create_entity(request.app.state.orbit_client, token, payload)
+
+    return analysis
