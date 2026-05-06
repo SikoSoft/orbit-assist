@@ -34,8 +34,12 @@ def build_entity_payload(
     image_url: str | None = None,
     time_zone: int | None = None,
     suggestion: bool = False,
+    user_id: str | None = None,
 ) -> CreateEntityRequest:
+    logger.info("Building entity payload for config ID %d with properties: %s", entity_config_id, property_values)
     matching_config = next((c for c in configs if c.id == entity_config_id), None)
+    if matching_config is None:
+        raise HTTPException(status_code=422, detail=f"No entity config found for id {entity_config_id}")
     prop_order_by_id = {prop.id: i for i, prop in enumerate(matching_config.properties)}
 
     properties = [
@@ -69,10 +73,12 @@ def build_entity_payload(
 
     return CreateEntityRequest(
         entityConfigId=entity_config_id,
+        userId=user_id,
         properties=properties,
         tags=[],
         timeZone=time_zone,
         suggestion=suggestion,
+        published=True,
     )
 
 

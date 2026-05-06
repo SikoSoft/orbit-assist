@@ -45,10 +45,12 @@ class CreateEntityProperty(BaseModel):
 
 class CreateEntityRequest(BaseModel):
     entityConfigId: int
+    userId: str | None = None
     properties: list[CreateEntityProperty]
     propertyReferences: list[dict[str, str | int | float | bool | date | PropertyImageValue]] | None = None
     tags: list[str] | None = None
     timeZone: int | None = None
+    published: bool = False
     suggestion: bool = False
     createdAt: str | None = None
 
@@ -81,6 +83,7 @@ class SuggestedProperty(BaseModel):
 
 class EntitySuggestion(BaseModel):
     type: int
+    userId: str
     properties: list[SuggestedProperty]
     hour: int
     minute: int

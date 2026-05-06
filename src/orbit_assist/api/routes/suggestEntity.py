@@ -30,7 +30,7 @@ def _filter_entity_properties(entities: list, offset_minutes: int = 0) -> list:
             if _keep_property(p.get("value"))
         ]
         created_at = _convert_timestamp(entity["createdAt"], offset_minutes)
-        result.append({"createdAt": created_at, "properties": filtered})
+        result.append({"userId": entity.get("userId"), "createdAt": created_at, "type": entity.get("type"), "properties": filtered})
     return result
 
 
@@ -38,8 +38,8 @@ def _build_prompt(entities: list, offset_minutes: int = 0) -> str:
     filtered = _filter_entity_properties(entities, offset_minutes)
     lines = [
         "You are an assistant for a user of a activity tracking management platform called Orbit. Your job is to review the items created in the past week and identify any commonly added entries, and the average time (hour and minute) at which they are typically created. You should only identify entities that you are confident are present in the content.",
-        "Two entries are considered the same if they share identical propertyConfigId and value pairs across all non-date properties. Treat any entries that differ only in date-typed properties as matches.",
-        "For each identified suggestion, determine the average hour and average minute across all matching entries and return both values.",
+        "Two entries are considered the same if they share the same userId AND identical propertyConfigId and value pairs across all non-date properties. Treat any entries that differ only in date-typed properties as matches. Never group entries from different users together.",
+        "For each identified suggestion, return the userId from the matching entries and determine the average hour and average minute across all matching entries.",
         "",
         "Past weeks entries:",
     ]
@@ -78,6 +78,7 @@ async def _fetch_entities(orbit_client, token: str, list_filter: ListFilter):
 
 async def _post_suggested_entities(orbit_client, token: str, payloads: list, date_str: str):
     body = [p.model_dump(exclude={"suggestion"}, exclude_none=True) for p in payloads]
+    logger.info("Posting suggested entities to /suggestEntity/%s:\n%s", date_str, json.dumps(body, indent=2))
     response = await orbit_client.post(
         f"/suggestEntity/{date_str}",
         json=body,
@@ -137,6 +138,7 @@ async def suggest_entity(
             property_values,
             configs,
             suggestion=True,
+            user_id=suggestion_item.userId,
         )
         payload.createdAt = created_at
         payloads.append(payload)
