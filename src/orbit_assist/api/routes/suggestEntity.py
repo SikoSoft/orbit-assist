@@ -137,6 +137,7 @@ async def suggest_entity(
             suggestion_item.type,
             property_values,
             configs,
+            published=False,
             suggestion=True,
             user_id=suggestion_item.userId,
         )

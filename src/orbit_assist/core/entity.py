@@ -33,6 +33,7 @@ def build_entity_payload(
     configs: list[EntityConfig],
     image_url: str | None = None,
     time_zone: int | None = None,
+    published: bool = True,
     suggestion: bool = False,
     user_id: str | None = None,
 ) -> CreateEntityRequest:
@@ -78,7 +79,7 @@ def build_entity_payload(
         tags=[],
         timeZone=time_zone,
         suggestion=suggestion,
-        published=True,
+        published=published,
     )
 
 
