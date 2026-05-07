@@ -141,6 +141,14 @@ async def suggest_entity(
             user_id=suggestion_item.userId,
         )
         payload.createdAt = created_at
+
+        matching_config = next((c for c in configs if c.id == suggestion_item.type), None)
+        if matching_config:
+            date_prop_ids = {p.id for p in matching_config.properties if "date" in p.dataType.lower()}
+            for prop in payload.properties:
+                if prop.propertyConfigId in date_prop_ids:
+                    prop.value = created_at
+
         payloads.append(payload)
 
     await _post_suggested_entities(request.app.state.orbit_client, token, payloads, tomorrow_str)
