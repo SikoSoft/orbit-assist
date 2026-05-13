@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from fastapi import HTTPException
 from orbit_assist.schemas.entity import (
@@ -56,7 +56,7 @@ def build_entity_payload(
         if prop.name.lower() == "occurred at":
             properties.append(CreateEntityProperty(
                 propertyConfigId=prop.id,
-                value=datetime.now(timezone.utc).isoformat(),
+                value=datetime.now().strftime("%Y-%m-%dT%H:%M"),
                 order=prop_order_by_id[prop.id],
             ))
             break

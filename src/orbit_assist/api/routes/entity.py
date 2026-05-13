@@ -156,7 +156,7 @@ async def upload_image(
                 time_zone=int(request.query_params.get("timeZone")),
                 published=True
             )
-            logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload)
+            logger.info("Entity payload — handler: %s, payload: %s", part.function_call.name, payload.model_dump_json())
             entity = await create_entity(request.app.state.orbit_client, token, payload)
             return ImageUploadResponse(
                 filename=file.filename,
