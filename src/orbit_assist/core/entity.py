@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from fastapi import HTTPException
 from orbit_assist.schemas.entity import (
@@ -8,6 +8,15 @@ from orbit_assist.schemas.entity import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def get_date_in_time_zone(date_str: str, time_zone: int) -> datetime:
+    # time_zone uses JS getTimezoneOffset() convention: negative for east (-120 for UTC+2)
+    # server_tz uses Python utcoffset() convention: positive for east (+120 for UTC+2)
+    # Step 1: server local → UTC: subtract server_tz
+    # Step 2: UTC → client local: subtract time_zone (e.g. -(-120) = +120 for UTC+2)
+    server_tz = int(datetime.now().astimezone().utcoffset().total_seconds() / 60)
+    return datetime.fromisoformat(date_str) - timedelta(minutes=server_tz + time_zone)
 
 
 def _get_property_config_id_by_type(entity_config: EntityConfig, prop_type: str) -> int:
@@ -54,9 +63,12 @@ def build_entity_payload(
 
     for prop in matching_config.properties:
         if prop.name.lower() == "occurred at":
+            date_str = datetime.now().strftime("%Y-%m-%dT%H:%M")
+            if time_zone is not None:
+                date_str = get_date_in_time_zone(date_str, time_zone).strftime("%Y-%m-%dT%H:%M")
             properties.append(CreateEntityProperty(
                 propertyConfigId=prop.id,
-                value=datetime.now().strftime("%Y-%m-%dT%H:%M"),
+                value=date_str,
                 order=prop_order_by_id[prop.id],
             ))
             break
