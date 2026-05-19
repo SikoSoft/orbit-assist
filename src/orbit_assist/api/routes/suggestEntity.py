@@ -39,7 +39,7 @@ def _build_prompt(entities: list, offset_minutes: int = 0) -> str:
     lines = [
         "You are an assistant for a user of a activity tracking management platform called Orbit. Your job is to review the items created in the past week and identify any commonly added entries, and the average time (hour and minute) at which they are typically created. You should only identify entities that you are confident are present in the content.",
         "Two entries are considered the same if they share the same userId AND identical propertyConfigId and value pairs across all non-date properties. Treat any entries that differ only in date-typed properties as matches. Never group entries from different users together.",
-        "For each identified suggestion, return the userId from the matching entries and determine the average hour and average minute across all matching entries.",
+        "For each identified suggestion, return the userId from the matching entries and determine the average hour and average minute across all matching entries. When determining the average hour and minute, look at any date-typed properties first. If there are no date-typed properties, use the createdAt timestamp of the entry.",
         "",
         "Past weeks entries:",
     ]
