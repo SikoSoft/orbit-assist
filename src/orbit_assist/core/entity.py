@@ -43,7 +43,8 @@ def build_entity_payload(
     image_url: str | None = None,
     time_zone: int | None = None,
     published: bool = True,
-    suggestion: bool = False,
+    suggested: bool = False,
+    identified: bool = False,
     user_id: str | None = None,
 ) -> CreateEntityRequest:
     logger.info("Building entity payload for config ID %d with properties: %s", entity_config_id, property_values)
@@ -90,8 +91,9 @@ def build_entity_payload(
         properties=properties,
         tags=[],
         timeZone=time_zone,
-        suggestion=suggestion,
+        suggested=suggested,
         published=published,
+        identified=identified,
     )
 
 

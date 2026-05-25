@@ -138,7 +138,8 @@ async def suggest_entity(
             property_values,
             configs,
             published=False,
-            suggestion=True,
+            suggested=True,
+            identified=False,
             user_id=suggestion_item.userId,
         )
         payload.createdAt = created_at
