@@ -51,7 +51,8 @@ class CreateEntityRequest(BaseModel):
     tags: list[str] | None = None
     timeZone: int | None = None
     published: bool = False
-    suggestion: bool = False
+    suggested: bool = False
+    identified: bool = False
     createdAt: str | None = None
 
 class EntityProperty(BaseModel):
