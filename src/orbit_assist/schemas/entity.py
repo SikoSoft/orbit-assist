@@ -20,12 +20,33 @@ class EntityPropertyConfig(BaseModel):
     options: list[str] | None = None
     # defaultValue: any
 
+EntityPropertyCalculationOperation = Literal["*", "+", "-", "/"]
+
+class EntityPropertyCalculationReference(BaseModel):
+    propertyConfigId: int
+
+class EntityPropertyCalculation(BaseModel):
+    value1: EntityPropertyCalculationReference | float
+    value2: EntityPropertyCalculationReference | float
+    operation: EntityPropertyCalculationOperation
+
+class EntityCalculatedPropertyConfig(BaseModel):
+    entityConfigId: int
+    id: int
+    userId: str
+    name: str
+    prefix: str
+    suffix: str
+    hidden: bool
+    dataType: str
+    calculation: EntityPropertyCalculation
+
 class EntityConfig(BaseModel):
     id: int
     userId: str
     name: str
     description: str | None = None
-    properties: list[EntityPropertyConfig]
+    properties: list[EntityCalculatedPropertyConfig | EntityPropertyConfig]
     aiEnabled: bool
     aiIdentifyPrompt: str | None = None
 

@@ -2,7 +2,7 @@ import logging
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from google.genai import types, errors as genai_errors
-from orbit_assist.schemas.entity import EntityConfig, ImageUploadResponse
+from orbit_assist.schemas.entity import EntityCalculatedPropertyConfig, EntityConfig, ImageUploadResponse
 from orbit_assist.api.deps import get_authorization_header
 from orbit_assist.core.entity import build_entity_payload, create_entity, fetch_configs
 
@@ -35,7 +35,7 @@ def _build_function_declarations(configs: list[EntityConfig]) -> list[types.Func
     for config in configs:
         if not config.aiEnabled:
             continue
-        visible_props = [p for p in config.properties if not p.hidden and p.name.lower() != "occurred at"]
+        visible_props = [p for p in config.properties if not p.hidden and p.name.lower() != "occurred at" and not isinstance(p, EntityCalculatedPropertyConfig)]
         properties = {
             "entityConfigId": types.Schema(
                 type="INTEGER",
@@ -74,7 +74,7 @@ def _build_prompt(configs: list[EntityConfig]) -> str:
     for config in configs:
         if not config.aiEnabled:
             continue
-        visible_props = [p for p in config.properties if not p.hidden]
+        visible_props = [p for p in config.properties if not p.hidden and not isinstance(p, EntityCalculatedPropertyConfig)]
         prop_list = ", ".join(
             f"{p.name} (id: {p.id}, {'required' if p.required else 'optional'})"
             for p in visible_props
