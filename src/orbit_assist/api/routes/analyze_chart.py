@@ -22,7 +22,13 @@ router = APIRouter(tags=["chart"])
 _ANALYSIS_CONFIG = {
     "morningFasting": {
         "description": "how well the user maintained a morning fast",
-        "scale": "0.0 = broke fast immediately or heavily (consumed caloric items), 1.0 = maintained fast perfectly (no caloric intake)",
+        "scale": "0.0 = broke fast immediately or heavily (consumed caloric food before noon), 1.0 = maintained fast perfectly (no caloric food intake before noon)",
+        "hint": (
+            "Only consider items consumed between midnight and noon (00:00–12:00). "
+            "Afternoon and evening eating does NOT affect this score — ignore it entirely. "
+            "Medications never break a fast. Black coffee and plain tea are borderline; "
+            "lean toward not breaking the fast unless clearly caloric."
+        ),
     },
     "afternoonSnacking": {
         "description": "the intensity of afternoon snacking activity",
@@ -57,9 +63,10 @@ def _build_prompt(
         "For each time window below, analyze the entities and assign a score from 0.0 to 1.0.",
         "Return null if there is genuinely not enough meaningful data to classify, even if some entities exist.",
         "Your response must include every segment key exactly as provided.",
-        "",
-        "Time windows:",
     ]
+    if "hint" in cfg:
+        lines += ["", f"Important: {cfg['hint']}"]
+    lines += ["", "Time windows:"]
     for segment, entities in segments_with_entities:
         entity_data = [
             {
@@ -93,7 +100,7 @@ async def analyze_chart(
 
     if non_empty:
         prompt = _build_prompt(body.analysisType, non_empty)
-        logger.debug("analyzeChart prompt: %s", prompt.replace("\n", "\\n"))
+        logger.debug("analyzeChart prompt: %s", prompt) #.replace("\n", "\\n"))
 
         try:
             genai_response = await request.app.state.genai_client.aio.models.generate_content(
