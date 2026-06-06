@@ -7,6 +7,7 @@ from google.genai import errors as genai_errors
 from google.genai import types
 
 from orbit_assist.api.deps import get_authorization_header
+from orbit_assist.core.models import get_model
 from orbit_assist.schemas.analyze_chart import (
     AnalyzeChartRequest,
     AnalyzeChartResponse,
@@ -112,7 +113,7 @@ async def analyze_chart(
 
         try:
             genai_response = await request.app.state.genai_client.aio.models.generate_content(
-                model="models/gemini-3.1-flash-lite-preview",
+                model=get_model("analyze_chart"),
                 contents=[prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",

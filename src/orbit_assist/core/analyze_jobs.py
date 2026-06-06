@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from google import genai
 from typing import List
 
+from orbit_assist.core.models import get_model
+
 
 class SkillCount(BaseModel):
     name: str = Field(
@@ -35,7 +37,7 @@ async def analyze_jobs(genai_client: genai.Client, job_descriptions: List[str]):
     """
 
     response = await genai_client.aio.models.generate_content(
-        model="models/gemini-3.1-flash-lite-preview",
+        model=get_model("jobs"),
         contents=prompt,
         config={
             "response_mime_type": "application/json",
