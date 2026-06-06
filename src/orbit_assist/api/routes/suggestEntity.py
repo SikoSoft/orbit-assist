@@ -7,6 +7,7 @@ from google.genai import types, errors as genai_errors
 from orbit_assist.schemas.entity import EntityAnalysisResponse, EntityConfig, EntityConfigResponse, ListConfig, ListFilter, ListFilterTimeType, RangeContext
 from orbit_assist.api.deps import get_authorization_header
 from orbit_assist.core.entity import build_entity_payload, create_entity, fetch_configs
+from orbit_assist.core.models import get_model
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["images"])
@@ -115,7 +116,7 @@ async def suggest_entity(
 
     try:
         genai_response = await request.app.state.genai_client.aio.models.generate_content(
-            model="models/gemini-3.1-flash-lite-preview",
+            model=get_model("suggest_entity"),
             contents=[prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
