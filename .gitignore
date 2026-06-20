@@ -13,3 +13,5 @@ wheels/
 
 credentials.json
 *token.json
+
+src/orbit_assist/data/analysisConfig.json

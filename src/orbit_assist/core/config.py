@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     google_credentials_path: str = "credentials.json"
     google_token_path: str = "token.json"
 
+    analysis_config_url: str = "https://sikosoftstorage.blob.core.windows.net/api-spec/analysisConfig-latest.json"
+
 
 @lru_cache
 def get_settings() -> Settings:

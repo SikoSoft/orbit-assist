@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 dev = "orbit_assist.dev:run"
+fetch-analysis-config = "orbit_assist.core.fetch_analysis_config:main"
 
 
 [tool.uv]

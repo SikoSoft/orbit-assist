@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import BaseModel
 
 
@@ -22,7 +20,7 @@ class ChartSegment(BaseModel):
 
 
 class AnalyzeChartRequest(BaseModel):
-    analysisType: Literal["morningFasting", "afternoonSnacking", "caffeineIntake"]
+    analysisType: str
     entities: list[ChartEntity]
     segments: list[ChartSegment]
 

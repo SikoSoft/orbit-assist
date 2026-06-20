@@ -7,6 +7,8 @@ from google.genai import errors as genai_errors
 from google.genai import types
 
 from orbit_assist.api.deps import get_authorization_header
+from orbit_assist.core.analysis_config import get_analysis_config
+from orbit_assist.schemas.analysis_config import AnalysisPromptConfig
 from orbit_assist.schemas.analyze_chart import (
     AnalyzeChartRequest,
     AnalyzeChartResponse,
@@ -18,31 +20,6 @@ from orbit_assist.schemas.analyze_chart import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chart"])
-
-_ANALYSIS_CONFIG = {
-    "morningFasting": {
-        "description": "how well the user maintained a morning fast",
-        "scale": "0.0 = broke fast immediately or heavily (consumed caloric food before noon), 1.0 = maintained fast perfectly (no caloric food intake before noon)",
-        "notes": [
-            "Only consider items consumed between midnight and noon (00:00–12:00). "
-            "Afternoon and evening eating does NOT affect this score — ignore it entirely. "
-            "Medications never break a fast. Black coffee and plain tea are borderline; "
-            "lean toward not breaking the fast unless clearly caloric.",
-        ],
-    },
-    "afternoonSnacking": {
-        "description": "the intensity of afternoon snacking activity",
-        "scale": "0.0 = no snacking at all, 1.0 = very frequent or heavy snacking",
-    },
-    "caffeineIntake": {
-        "description": "caffeinated drink consumption",
-        "scale": "integer count — number of caffeinated drinks consumed (cups of coffee, lungo, espresso shots, energy drinks, etc.)",
-        "notes": [
-            "For each time window, count the total number of caffeinated drink items consumed. "
-            "Return 0 if none are found, or null if there is genuinely not enough data to determine.",
-        ],
-    },
-}
 
 
 def _parse_dt(dt_str: str) -> datetime:
@@ -56,20 +33,16 @@ def _filter_entities(entities: list[ChartEntity], segment: ChartSegment) -> list
 
 
 def _build_prompt(
-    analysis_type: str,
+    cfg: AnalysisPromptConfig,
     segments_with_entities: list[tuple[ChartSegment, list[ChartEntity]]],
 ) -> str:
-    cfg = _ANALYSIS_CONFIG[analysis_type]
-    notes = cfg.get(
-        "notes",
-        [
-            "For each time window below, analyze the entities and assign a score from 0.0 to 1.0.\n"
-            "Return null if there is genuinely not enough meaningful data to classify, even if some entities exist.",
-        ],
-    )
+    notes = cfg.notes or [
+        "For each time window below, analyze the entities and assign a score from 0.0 to 1.0.\n"
+        "Return null if there is genuinely not enough meaningful data to classify, even if some entities exist.",
+    ]
     lines = [
-        f"You are analyzing activity tracking data to classify {cfg['description']}.",
-        f"Scale: {cfg['scale']}",
+        f"You are analyzing activity tracking data to classify {cfg.description}.",
+        f"Scale: {cfg.scale}",
         "",
         *notes,
         "Your response must include every segment key exactly as provided.",
@@ -105,6 +78,11 @@ async def analyze_chart(
     request: Request,
     token: str = Depends(get_authorization_header),
 ) -> AnalyzeChartResponse:
+    analysis_config = get_analysis_config()
+    analysis_type_config = analysis_config.get(body.analysisType)
+    if analysis_type_config is None:
+        raise HTTPException(status_code=400, detail=f"Unknown analysisType: {body.analysisType}")
+
     segment_entities = [
         (seg, _filter_entities(body.entities, seg))
         for seg in body.segments
@@ -114,7 +92,7 @@ async def analyze_chart(
     non_empty = [(seg, ents) for seg, ents in segment_entities if ents]
 
     if non_empty:
-        prompt = _build_prompt(body.analysisType, non_empty)
+        prompt = _build_prompt(analysis_type_config.promptConfig, non_empty)
         logger.debug("analyzeChart prompt: %s", prompt) #.replace("\n", "\\n"))
 
         try:
