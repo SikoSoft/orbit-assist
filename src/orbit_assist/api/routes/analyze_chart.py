@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from google.genai import errors as genai_errors
 from google.genai import types
+from pydantic import ValidationError
 
 from orbit_assist.api.deps import get_authorization_header
 from orbit_assist.core.analysis_config import get_analysis_config
@@ -78,9 +79,19 @@ async def analyze_chart(
     request: Request,
     token: str = Depends(get_authorization_header),
 ) -> AnalyzeChartResponse:
-    analysis_config = get_analysis_config()
+    try:
+        analysis_config = get_analysis_config()
+    except RuntimeError:
+        logger.error("analyzeChart could not load analysis config", exc_info=True)
+        raise HTTPException(status_code=500, detail="Analysis config unavailable")
+
     analysis_type_config = analysis_config.get(body.analysisType)
     if analysis_type_config is None:
+        logger.warning(
+            "analyzeChart received unknown analysisType %r; available types: %s",
+            body.analysisType,
+            sorted(analysis_config.keys()),
+        )
         raise HTTPException(status_code=400, detail=f"Unknown analysisType: {body.analysisType}")
 
     segment_entities = [
@@ -109,7 +120,16 @@ async def analyze_chart(
             raise HTTPException(status_code=502, detail="Gemini API error")
 
         logger.info("analyzeChart Gemini response: %s", genai_response.text)
-        analysis = GeminiScoreAnalysis.model_validate_json(genai_response.text)
+        try:
+            analysis = GeminiScoreAnalysis.model_validate_json(genai_response.text)
+        except ValidationError:
+            logger.error(
+                "analyzeChart failed to parse Gemini response as GeminiScoreAnalysis: %s",
+                genai_response.text,
+                exc_info=True,
+            )
+            raise HTTPException(status_code=502, detail="Malformed Gemini response")
+
         for score in analysis.scores:
             results[score.key] = score.value
 
